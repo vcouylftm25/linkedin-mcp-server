@@ -1176,7 +1176,7 @@ class TestForwardingToASharedOwner:
 
         cli_main.main([])
 
-        assert set(built) == {"tool_timeout"}
+        assert set(built) == {"tool_timeout", "prospecting_limits"}
 
     def test_an_interactively_chosen_http_transport_elects_no_daemon(
         self, monkeypatch: pytest.MonkeyPatch

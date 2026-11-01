@@ -126,10 +126,12 @@ class CodedToolError(ToolError):
         code: ErrorCode = ErrorCode.INTERNAL,
         *,
         retry_after: int | None = None,
+        structured_content: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.retry_after = retry_after
+        self.structured_content = structured_content
 
 
 class ErrorCodeMiddleware(Middleware):
@@ -154,7 +156,15 @@ class ErrorCodeMiddleware(Middleware):
             return await call_next(context)
         except (ToolError, ValidationError, NotFoundError) as exc:
             retry_after = exc.retry_after if isinstance(exc, CodedToolError) else None
-            return error_result(str(exc), _code_of(exc), retry_after=retry_after)
+            structured_content = (
+                exc.structured_content if isinstance(exc, CodedToolError) else None
+            )
+            return error_result(
+                str(exc),
+                _code_of(exc),
+                retry_after=retry_after,
+                structured_content=structured_content,
+            )
 
 
 def _code_of(exc: Exception) -> ErrorCode:

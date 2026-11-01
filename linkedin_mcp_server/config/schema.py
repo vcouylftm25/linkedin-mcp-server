@@ -419,6 +419,9 @@ class ServerConfig:
     port: int = 8000
     path: str = "/mcp"
     tool_timeout_seconds: float = DEFAULT_TOOL_TIMEOUT_SECONDS
+    daily_invite_limit: int = 20
+    daily_message_limit: int = 40
+    prospecting_state_dir: str | None = None
     # Serve every stdio client from one browser-owning process instead of
     # giving each its own. Off while the supervision and liveness work is
     # unfinished: an owner that outlives its client must be provably unable to
@@ -428,6 +431,8 @@ class ServerConfig:
 
     def validate(self) -> None:
         """Validate server configuration values."""
+        if self.daily_invite_limit < 0 or self.daily_message_limit < 0:
+            raise ConfigurationError("Daily prospecting limits must be nonnegative")
         if not (
             math.isfinite(self.tool_timeout_seconds) and self.tool_timeout_seconds > 0
         ):

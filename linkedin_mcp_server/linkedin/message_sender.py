@@ -1613,18 +1613,24 @@ class MessageSender:
         return "clicked" if result == "clicked" else "invalid"
 
     @staticmethod
-    async def _cleanup_owned_message(message: str, owner: Any) -> None:
+    async def _cleanup_owned_message(message: str, owner: Any) -> bool:
         """Best-effort removal of text proven to belong to this tool call."""
+        cleared = False
         with contracts.before_the_reply_deadline(
             _MESSAGE_CLEANUP_TIMEOUT_SECONDS, shield=True
         ) as scope:
             try:
-                await owner.evaluate(_MESSAGE_COMPOSER_CLEANUP_JS, {"message": message})
+                cleared = bool(
+                    await owner.evaluate(
+                        _MESSAGE_COMPOSER_CLEANUP_JS, {"message": message}
+                    )
+                )
             except Exception:
                 logger.debug("Could not clear tool-owned message text", exc_info=True)
         if scope.cancel_called:
             logger.warning("Timed out clearing tool-owned message text")
         await anyio.lowlevel.checkpoint()
+        return cleared and not scope.cancel_called
 
     async def _resolve_message_owner(
         self,
@@ -1816,6 +1822,7 @@ class MessageSender:
         *,
         confirm_send: bool,
         profile_urn: str | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """Compose and send a new message with explicit confirmation gating.
 
@@ -1956,7 +1963,7 @@ class MessageSender:
         if state.get("enterToSend") is True:
             return _enter_to_send_result(self._page.url)
 
-        if not confirm_send:
+        if not confirm_send and not dry_run:
             return contracts.message_action_result(
                 self._page.url,
                 "confirmation_required",
@@ -2007,6 +2014,7 @@ class MessageSender:
             )
 
         may_have_submitted = False
+        preview_cleared = False
         try:
             owner = await self._resolve_message_owner(
                 target, expected_route=expected_route
@@ -2060,6 +2068,28 @@ class MessageSender:
                         "changing the verified composer.",
                         recipient_selected=recipient_selected,
                     )
+
+                if dry_run:
+                    preview_cleared = await self._cleanup_owned_message(message, owner)
+                    if not preview_cleared:
+                        return contracts.message_action_result(
+                            self._page.url,
+                            "draft_cleanup_failed",
+                            "The message was not sent, but its draft could not be confirmed cleared. Inspect the composer before further use.",
+                            recipient_selected=recipient_selected,
+                        )
+                    return {
+                        **contracts.message_action_result(
+                            self._page.url,
+                            "preview",
+                            "Message ready; draft discarded without sending.",
+                            recipient_selected=recipient_selected,
+                        ),
+                        "recipient": linkedin_username,
+                        "connection_state": "messageable",
+                        "text": message,
+                        "dry_run": True,
+                    }
 
                 confirmation = await self._prepare_message_confirmation(
                     message,
@@ -2171,7 +2201,7 @@ class MessageSender:
                     await self._dispose_message_confirmation(owner, confirmation)
             finally:
                 try:
-                    if not may_have_submitted:
+                    if not may_have_submitted and not preview_cleared:
                         await self._cleanup_owned_message(message, owner)
                 finally:
                     await self._dispose_message_owner(owner)

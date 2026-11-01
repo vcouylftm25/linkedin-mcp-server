@@ -33,7 +33,13 @@ if TYPE_CHECKING:
 #: whole section: transport, host, port and the one-shot flags all describe the
 #: *frontend's* invocation, and an owner that adopted them would try to run the
 #: client's transport or re-run its ``--login``.
-_SERVER_FIELDS = ("tool_timeout_seconds", "log_level")
+_SERVER_FIELDS = (
+    "tool_timeout_seconds",
+    "log_level",
+    "daily_invite_limit",
+    "daily_message_limit",
+    "prospecting_state_dir",
+)
 
 
 @dataclass(frozen=True)

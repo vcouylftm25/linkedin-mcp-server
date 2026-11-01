@@ -221,6 +221,44 @@ class TestReadProfileMessageTarget:
 
 
 class TestSendMessage:
+    @pytest.mark.parametrize("cleared", [True, False])
+    async def test_preview_cleans_draft_without_submit(self, mock_page, cleared):
+        sender = _sender(mock_page)
+        patches = self._patch_to_composer(sender, mock_page)
+        with (
+            patches[1],
+            patches[2],
+            patches[3],
+            patches[4],
+            patches[5],
+            patches[6] as write,
+            patches[7] as submit,
+            patches[8],
+            patches[9],
+            patches[10],
+            patch.object(
+                sender,
+                "_wait_for_verified_submit",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                sender,
+                "_cleanup_owned_message",
+                new_callable=AsyncMock,
+                return_value=cleared,
+            ) as cleanup,
+        ):
+            result = await sender.send_message(
+                "testuser", "Hello!", confirm_send=True, dry_run=True
+            )
+        assert result["status"] == ("preview" if cleared else "draft_cleanup_failed")
+        if cleared:
+            assert result["text"] == "Hello!"
+        write.assert_awaited_once()
+        assert cleanup.await_count == (1 if cleared else 2)
+        submit.assert_not_awaited()
+
     @pytest.mark.parametrize("message", ["", " \t\n"], ids=["empty", "whitespace"])
     async def test_blank_message_is_rejected_before_browser_interaction(
         self, mock_page, message

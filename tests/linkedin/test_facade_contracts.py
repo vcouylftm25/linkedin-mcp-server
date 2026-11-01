@@ -217,7 +217,7 @@ async def test_facade_connect_forwards_the_optional_note(mock_page):
         result = await extractor.connect_with_person("target", note="context")
 
     assert result is expected
-    connect.assert_awaited_once_with("target", note="context")
+    connect.assert_awaited_once_with("target", note="context", dry_run=False)
 
 
 async def test_connection_profile_read_resolves_the_facade_delegate_late(mock_page):
@@ -480,6 +480,7 @@ async def test_facade_send_message_forwards_every_argument(mock_page):
         "Message text",
         confirm_send=False,
         profile_urn="ACoAAB",
+        dry_run=False,
     )
 
 
