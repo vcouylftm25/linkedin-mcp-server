@@ -25,6 +25,7 @@ from linkedin_mcp_server.linkedin.message_sender import MessageSender
 from linkedin_mcp_server.linkedin.navigation import PageNavigator
 from linkedin_mcp_server.linkedin.person import PersonReader
 from linkedin_mcp_server.linkedin.posts import PostSearch
+from linkedin_mcp_server.linkedin.post_publisher import PostPublisher
 from linkedin_mcp_server.linkedin.profile_page import ProfilePageReader
 from linkedin_mcp_server.linkedin.session import PageSession
 from linkedin_mcp_server.linkedin.text import (
@@ -66,6 +67,7 @@ class LinkedInExtractor:
         job_pages = JobPageReader(session, navigator, content)
         self._jobs = JobReader(navigator, capture, job_pages)
         self._posts = PostSearch(capture)
+        self._post_publisher = PostPublisher(session, navigator)
         self._conversations = ConversationReader(
             session, navigator, content, profile_page
         )
@@ -73,6 +75,19 @@ class LinkedInExtractor:
     async def get_page_text(self) -> str:
         """Extract innerText from the main content area of the current page."""
         return await self._content.get_page_text()
+
+    async def create_post(
+        self,
+        text: str,
+        *,
+        dry_run: bool = False,
+        image_path: str | None = None,
+        visibility: str = "current",
+    ) -> dict[str, Any]:
+        """Compose a feed post and optionally publish it."""
+        return await self._post_publisher.create_post(
+            text, dry_run=dry_run, image_path=image_path, visibility=visibility
+        )
 
     async def click_button_by_text(
         self, text: str, *, scope: str = "main", timeout: int = 5000

@@ -109,6 +109,58 @@
     "_meta": {
       "fastmcp": {
         "tags": [
+          "actions",
+          "post"
+        ]
+      }
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": true
+    },
+    "description": "Publish a feed post, or preview and discard it with dry_run=True.\n\nThe text must have 1 to 3000 characters. An optional local PNG, JPEG,\nGIF or WebP image can be attached. Visibility defaults to current,\nLinkedIn's existing composer audience; requested anyone or connections\nis refused because the audience cannot be verified without reading a\nlocale-dependent label. A result with retry_safe=False means the Post\nclick may have happened: inspect\nprofile activity before attempting another publication.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "image_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "text": {
+          "type": "string"
+        },
+        "visibility": {
+          "default": "current",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "create_post",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "title": "Create Post"
+  },
+  {
+    "_meta": {
+      "fastmcp": {
+        "tags": [
           "job"
         ]
       }

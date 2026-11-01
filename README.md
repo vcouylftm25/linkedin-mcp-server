@@ -79,6 +79,7 @@ Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https
 | `get_easy_apply_form` | Read an Easy Apply form: each field's label, type, options and prefilled value. Never types or submits. |
 | `get_feed` | Read recent posts from your home feed, with links to the original posts. |
 | `search_posts` | Search posts by keyword, optionally filtered by recency or content type. |
+| `create_post` | Publish a text post with an optional local image; `dry_run=true` previews and discards it; the current audience is retained. |
 | `get_session_status` | Check your saved login and browser state without opening a browser. |
 | `close_session` | Close the shared browser session without deleting your saved login. |
 

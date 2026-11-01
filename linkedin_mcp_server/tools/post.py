@@ -18,6 +18,10 @@ from linkedin_mcp_server.config.schema import DEFAULT_TOOL_TIMEOUT_SECONDS
 from linkedin_mcp_server.dependencies import get_ready_extractor, tool_errors
 from linkedin_mcp_server.error_handler import CodedToolError, ErrorCode
 from linkedin_mcp_server.linkedin.contracts import FilterValidationError
+from linkedin_mcp_server.linkedin.post_publisher import (
+    refuse_an_invalid_image,
+    refuse_an_invalid_post,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +30,49 @@ def register_post_tools(
     mcp: FastMCP, *, tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS
 ) -> None:
     """Register post/content-search tools with the MCP server."""
+
+    @mcp.tool(
+        timeout=tool_timeout,
+        title="Create Post",
+        annotations={"destructiveHint": True, "openWorldHint": True},
+        tags={"post", "actions"},
+    )
+    @tool_errors
+    async def create_post(
+        text: str,
+        ctx: Context,
+        image_path: str | None = None,
+        visibility: str = "current",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Publish a feed post, or preview and discard it with dry_run=True.
+
+        The text must have 1 to 3000 characters. An optional local PNG, JPEG,
+        GIF or WebP image can be attached. Visibility defaults to current,
+        LinkedIn's existing composer audience; requested anyone or connections
+        is refused because the audience cannot be verified without reading a
+        locale-dependent label. A result with retry_safe=False means the Post
+        click may have happened: inspect
+        profile activity before attempting another publication.
+        """
+        for refusal in (
+            refuse_an_invalid_post(text),
+            refuse_an_invalid_image(image_path),
+        ):
+            if refusal is not None:
+                return refusal
+        if visibility != "current":
+            return {
+                "url": "",
+                "status": "invalid",
+                "message": "Only current visibility is supported.",
+                "published": False,
+                "retry_safe": True,
+            }
+        extractor = await get_ready_extractor(ctx, tool_name="create_post")
+        return await extractor.create_post(
+            text, dry_run=dry_run, image_path=image_path, visibility=visibility
+        )
 
     @mcp.tool(
         timeout=tool_timeout,

@@ -30,6 +30,7 @@ FACADE_PACKAGE_IMPORTERS = {
 }
 
 PUBLIC_SIGNATURES = {
+    "create_post": "(self, text: 'str', *, dry_run: 'bool' = False, image_path: 'str | None' = None, visibility: 'str' = 'current') -> 'dict[str, Any]'",
     "click_button_by_text": "(self, text: 'str', *, scope: 'str' = 'main', timeout: 'int' = 5000) -> 'bool'",
     "connect_with_person": "(self, username: 'str', *, note: 'str | None' = None) -> 'dict[str, Any]'",
     "extract_feed": "(self, num_posts: 'int' = 10) -> 'ExtractedSection'",
@@ -57,6 +58,7 @@ PUBLIC_SIGNATURES = {
 }
 
 DELEGATES = {
+    "create_post": ("_post_publisher", "create_post"),
     "click_button_by_text": ("_content", "click_button_by_text"),
     "connect_with_person": ("_connection", "connect_with_person"),
     "extract_feed": ("_feed", "extract_feed"),
@@ -84,6 +86,7 @@ DELEGATES = {
 }
 
 DELEGATE_CALLS = {
+    "create_post": "self._post_publisher.create_post(text, dry_run=dry_run, image_path=image_path, visibility=visibility)",
     "click_button_by_text": "self._content.click_button_by_text(text, scope=scope, timeout=timeout)",
     "connect_with_person": "self._connection.connect_with_person(username, note=note)",
     "extract_feed": "self._feed.extract_feed(num_posts)",
@@ -121,6 +124,7 @@ FACADE_STATE = {
     "_message_sender",
     "_person",
     "_posts",
+    "_post_publisher",
 }
 
 PERMANENT_ALIASES = {
