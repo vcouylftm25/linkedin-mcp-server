@@ -170,11 +170,9 @@ function findIncomingActionRow(main) {
 #   action root. Primary action buttons (Follow / Connect /
 #   Save in Sales Navigator) carry aria-label for screen readers; the
 #   profile More button uses aria-expanded instead and is not counted.
-# - hasLabeledActionAnchor: at least one <a[aria-label]> inside the
-#   action root. LinkedIn renders the Pending state as an anchor (linking
-#   back to the profile URL) carrying aria-label like "Pending, click to
-#   withdraw…". The Message anchor has only aria-disabled, so a labeled
-#   anchor is the locale-independent Pending signal.
+# - hasLabeledActionAnchor: a labeled anchor back to this profile, without
+#   any labeled action button in the same root. A labeled Message or mutual
+#   connection link alone does not establish an outstanding invitation.
 # - hasIncomingActionRow: the incoming-request fingerprint matched (see
 #   _FIND_INCOMING_ACTION_ROW_FN_JS). Computed independently of
 #   findActionRoot, which cannot locate the top-card row on incoming
@@ -215,12 +213,8 @@ ACTION_SIGNALS_JS = (
         break;
       }
     }
-    for (const a of actionRoot.querySelectorAll('a')) {
-      if (a.hasAttribute('aria-label')) {
-        hasLabeledActionAnchor = true;
-        break;
-      }
-    }
+    hasLabeledActionAnchor = !hasLabeledActionButton &&
+      !!actionRoot.querySelector(`a[aria-label][href*="/in/${safe}/"]`);
   }
 
   return {
