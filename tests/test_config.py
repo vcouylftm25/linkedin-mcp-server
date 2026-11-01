@@ -1279,3 +1279,19 @@ class TestProxyEncodedUserinfo:
         config = BrowserConfig(proxy_server="http://gate.example:7000")
         config.validate()
         assert config.proxy_server == "http://gate.example:7000"
+
+
+def test_prospecting_limits_env_cli_precedence_and_validation(monkeypatch, tmp_path):
+    from linkedin_mcp_server.config.loaders import load_config
+
+    monkeypatch.setenv("DAILY_INVITE_LIMIT", "12")
+    monkeypatch.setenv("DAILY_MESSAGE_LIMIT", "25")
+    monkeypatch.setenv("PROSPECTING_STATE_DIR", str(tmp_path))
+    config = load_config(["--daily-invite-limit", "7"])
+    assert (config.server.daily_invite_limit, config.server.daily_message_limit) == (
+        7,
+        25,
+    )
+    assert config.server.prospecting_state_dir == str(tmp_path)
+    with pytest.raises(ConfigurationError, match="nonnegative"):
+        load_config(["--daily-message-limit", "-1"])

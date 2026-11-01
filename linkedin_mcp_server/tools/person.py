@@ -20,6 +20,7 @@ from linkedin_mcp_server.linkedin import parse_person_sections
 from linkedin_mcp_server.linkedin.contracts import FilterValidationError
 from linkedin_mcp_server.linkedin.identifiers import normalize_person_identifier
 from linkedin_mcp_server.linkedin.search_urls import build_people_search_url
+from linkedin_mcp_server.prospecting_limits import ProspectingLimits
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,10 @@ StrList = Annotated[list[str], BeforeValidator(_coerce_str_list)]
 
 
 def register_person_tools(
-    mcp: FastMCP, *, tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS
+    mcp: FastMCP,
+    *,
+    tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS,
+    limits: ProspectingLimits | None = None,
 ) -> None:
     """Register all person-related tools with the MCP server."""
 
@@ -225,6 +229,7 @@ def register_person_tools(
         linkedin_username: str,
         ctx: Context,
         note: str | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """
         Send a LinkedIn connection request or accept an incoming one.
@@ -236,6 +241,7 @@ def register_person_tools(
             linkedin_username: LinkedIn username (e.g., "stickerdaniel", "williamhgates"). A full profile URL is accepted too and is reduced to the username.
             ctx: FastMCP context for progress reporting
             note: Optional note to include with the invitation
+            dry_run: Resolve the recipient and prepare the invitation, then dismiss it before sending.
 
         Returns:
             Dict with url, status, message, and note_sent.
@@ -261,9 +267,18 @@ def register_person_tools(
             process, so whether the invitation was sent is unknown. It carries
             ``retry_safe: False`` and no ``note_sent``; check the profile
             before calling again, because a repeat may invite twice.
+
+            ``preview`` includes recipient, note and connection_state; it does
+            not send or consume the daily invite allowance.
         """
         linkedin_username = normalize_person_identifier(linkedin_username)
-        extractor = await get_ready_extractor(ctx, tool_name="connect_with_person")
+        token = limits.reserve("invite") if limits is not None and not dry_run else None
+        try:
+            extractor = await get_ready_extractor(ctx, tool_name="connect_with_person")
+        except BaseException:
+            if token is not None and limits is not None:
+                limits.release(token)
+            raise
         logger.info(
             "Connecting with person: %s (note=%s)",
             linkedin_username,
@@ -276,10 +291,25 @@ def register_person_tools(
             message="Starting LinkedIn connection flow",
         )
 
-        result = await extractor.connect_with_person(
-            linkedin_username,
-            note=note,
-        )
+        try:
+            result = await extractor.connect_with_person(
+                linkedin_username, note=note, dry_run=dry_run
+            )
+        except BaseException:
+            # A browser failure during submission can mean LinkedIn accepted it.
+            raise
+        if (
+            token is not None
+            and limits is not None
+            and result.get("status")
+            not in (
+                "connected",
+                "accepted",
+                "send_failed",
+                "outcome_unknown",
+            )
+        ):
+            limits.release(token)
 
         await ctx.report_progress(progress=100, total=100, message="Complete")
 

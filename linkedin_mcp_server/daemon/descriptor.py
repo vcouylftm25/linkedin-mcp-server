@@ -592,6 +592,9 @@ def config_fingerprint(config: AppConfig, *, key: str) -> str:
         for name in SHARED_CONFIG_FIELDS
     }
     material["tool_timeout_seconds"] = config.server.tool_timeout_seconds
+    material["daily_invite_limit"] = config.server.daily_invite_limit
+    material["daily_message_limit"] = config.server.daily_message_limit
+    material["prospecting_state_dir"] = config.server.prospecting_state_dir
     return hmac.new(
         key.encode("utf-8"), _canonical(material).encode("utf-8"), hashlib.sha256
     ).hexdigest()

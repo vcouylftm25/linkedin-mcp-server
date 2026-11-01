@@ -129,9 +129,12 @@ class LinkedInExtractor:
         username: str,
         *,
         note: str | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """Send a LinkedIn connection request or accept an incoming one."""
-        return await self._connection.connect_with_person(username, note=note)
+        return await self._connection.connect_with_person(
+            username, note=note, dry_run=dry_run
+        )
 
     async def get_sidebar_profiles(self, username: str) -> dict[str, Any]:
         """Extract profile links from sidebar sections on a profile page."""
@@ -269,6 +272,7 @@ class LinkedInExtractor:
         *,
         confirm_send: bool,
         profile_urn: str | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """Compose and send a new message with explicit confirmation gating."""
         return await self._message_sender.send_message(
@@ -276,4 +280,5 @@ class LinkedInExtractor:
             message,
             confirm_send=confirm_send,
             profile_urn=profile_urn,
+            dry_run=dry_run,
         )

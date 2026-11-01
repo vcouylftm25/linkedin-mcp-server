@@ -31,7 +31,7 @@ FACADE_PACKAGE_IMPORTERS = {
 
 PUBLIC_SIGNATURES = {
     "click_button_by_text": "(self, text: 'str', *, scope: 'str' = 'main', timeout: 'int' = 5000) -> 'bool'",
-    "connect_with_person": "(self, username: 'str', *, note: 'str | None' = None) -> 'dict[str, Any]'",
+    "connect_with_person": "(self, username: 'str', *, note: 'str | None' = None, dry_run: 'bool' = False) -> 'dict[str, Any]'",
     "extract_feed": "(self, num_posts: 'int' = 10) -> 'ExtractedSection'",
     "extract_page": "(self, url: 'str', section_name: 'str', max_scrolls: 'int | None' = None) -> 'ExtractedSection'",
     "get_company_employees": "(self, company_name: 'str', keywords: 'str | None' = None) -> 'dict[str, Any]'",
@@ -53,7 +53,7 @@ PUBLIC_SIGNATURES = {
     "search_jobs": "(self, keywords: 'str', location: 'str | None' = None, max_pages: 'int' = 3, date_posted: 'str | None' = None, job_type: 'str | None' = None, experience_level: 'str | None' = None, work_type: 'str | None' = None, easy_apply: 'bool' = False, sort_by: 'str | None' = None, tool_timeout: 'float' = 180.0) -> 'dict[str, Any]'",
     "search_people": "(self, keywords: 'str', location: 'str | None' = None, network: 'list[str] | None' = None, current_company: 'str | None' = None) -> 'dict[str, Any]'",
     "search_posts": "(self, keywords: 'str', date_posted: 'str | None' = None, max_pages: 'int' = 3, content_type: 'str | None' = None) -> 'dict[str, Any]'",
-    "send_message": "(self, linkedin_username: 'str', message: 'str', *, confirm_send: 'bool', profile_urn: 'str | None' = None) -> 'dict[str, Any]'",
+    "send_message": "(self, linkedin_username: 'str', message: 'str', *, confirm_send: 'bool', profile_urn: 'str | None' = None, dry_run: 'bool' = False) -> 'dict[str, Any]'",
 }
 
 DELEGATES = {
@@ -85,7 +85,7 @@ DELEGATES = {
 
 DELEGATE_CALLS = {
     "click_button_by_text": "self._content.click_button_by_text(text, scope=scope, timeout=timeout)",
-    "connect_with_person": "self._connection.connect_with_person(username, note=note)",
+    "connect_with_person": "self._connection.connect_with_person(username, note=note, dry_run=dry_run)",
     "extract_feed": "self._feed.extract_feed(num_posts)",
     "extract_page": "self._capture.extract_page(url, section_name, max_scrolls)",
     "get_company_employees": "self._company.get_company_employees(company_name, keywords)",
@@ -107,7 +107,7 @@ DELEGATE_CALLS = {
     "search_jobs": "self._jobs.search_jobs(keywords, location, max_pages, date_posted, job_type, experience_level, work_type, easy_apply, sort_by, tool_timeout)",
     "search_people": "self._person.search_people(keywords, location=location, network=network, current_company=current_company)",
     "search_posts": "self._posts.search_posts(keywords, date_posted=date_posted, max_pages=max_pages, content_type=content_type)",
-    "send_message": "self._message_sender.send_message(linkedin_username, message, confirm_send=confirm_send, profile_urn=profile_urn)",
+    "send_message": "self._message_sender.send_message(linkedin_username, message, confirm_send=confirm_send, profile_urn=profile_urn, dry_run=dry_run)",
 }
 
 FACADE_STATE = {

@@ -13,6 +13,7 @@ from linkedin_mcp_server.linkedin.contracts import (
     SEND_INTERRUPTED_WARNING,
 )
 from linkedin_mcp_server.linkedin.contracts import ExtractedSection
+from linkedin_mcp_server.prospecting_limits import ProspectingLimits
 
 
 async def get_tool_fn(
@@ -56,6 +57,43 @@ def _make_mock_extractor(result: dict) -> MagicMock:
 
 
 _TOOL_MODULES = ("person", "company", "job", "messaging", "feed", "post")
+
+
+async def test_invite_cap_refuses_before_browser_and_preview_is_free(
+    tmp_path, mock_context, serve_extractor
+):
+    from linkedin_mcp_server.tools.person import register_person_tools
+
+    limits = ProspectingLimits(1, 1, str(tmp_path))
+    mcp = FastMCP("test")
+    register_person_tools(mcp, limits=limits)
+    extractor = _make_mock_extractor({"status": "connected"})
+    ready = serve_extractor(extractor)
+    call = await get_tool_fn(mcp, "connect_with_person")
+    await call("testuser", mock_context, dry_run=True)
+    assert ready.await_count == 1
+    await call("testuser", mock_context)
+    with pytest.raises(Exception, match="Daily invite limit reached"):
+        await call("testuser", mock_context)
+    assert ready.await_count == 2
+
+
+async def test_message_cap_refuses_before_browser_and_preview_is_free(
+    tmp_path, mock_context, serve_extractor
+):
+    from linkedin_mcp_server.tools.messaging import register_messaging_tools
+
+    limits = ProspectingLimits(1, 1, str(tmp_path))
+    mcp = FastMCP("test")
+    register_messaging_tools(mcp, limits=limits)
+    extractor = _make_mock_extractor({"status": "sent", "retry_safe": False})
+    ready = serve_extractor(extractor)
+    call = await get_tool_fn(mcp, "send_message")
+    await call("testuser", "Hello", True, mock_context, dry_run=True)
+    await call("testuser", "Hello", True, mock_context)
+    with pytest.raises(Exception, match="Daily message limit reached"):
+        await call("testuser", "Hello", True, mock_context)
+    assert ready.await_count == 2
 
 
 @pytest.fixture
@@ -935,6 +973,7 @@ class TestPersonTool:
             "https://www.linkedin.com/in/test-user/",
             mock_context,
             note="Let us connect.",
+            dry_run=False,
         )
 
         assert result["status"] == "connected"
@@ -942,6 +981,7 @@ class TestPersonTool:
         mock_extractor.connect_with_person.assert_awaited_once_with(
             "test-user",
             note="Let us connect.",
+            dry_run=False,
         )
 
     async def test_connect_with_person_no_note(self, mock_context, serve_extractor):
@@ -969,6 +1009,7 @@ class TestPersonTool:
         mock_extractor.connect_with_person.assert_awaited_once_with(
             "test-user",
             note=None,
+            dry_run=False,
         )
 
     async def test_connect_with_person_custom_note_limit_reached(
@@ -1005,6 +1046,7 @@ class TestPersonTool:
         mock_extractor.connect_with_person.assert_awaited_once_with(
             "test-user",
             note="Hello!",
+            dry_run=False,
         )
 
     async def test_connect_with_person_auth_error(self, monkeypatch):
@@ -2014,7 +2056,7 @@ class TestMessagingTools:
         assert result["status"] == "sent"
         assert result["sent"] is True
         mock_extractor.send_message.assert_awaited_once_with(
-            "testuser", "Hello!", confirm_send=True, profile_urn=None
+            "testuser", "Hello!", confirm_send=True, profile_urn=None, dry_run=False
         )
 
     async def test_send_message_description_explains_connection_handoff(self):
@@ -2134,7 +2176,11 @@ class TestMessagingTools:
 
         assert result["status"] == "sent"
         mock_extractor.send_message.assert_awaited_once_with(
-            "testuser", "First\r\nSecond", confirm_send=True, profile_urn=None
+            "testuser",
+            "First\r\nSecond",
+            confirm_send=True,
+            profile_urn=None,
+            dry_run=False,
         )
 
     @pytest.mark.parametrize(
@@ -2269,7 +2315,11 @@ class TestMessagingTools:
 
         assert result["status"] == "sent"
         mock_extractor.send_message.assert_awaited_once_with(
-            "testuser", "Hello!", confirm_send=True, profile_urn="ACoAAB1IelEB"
+            "testuser",
+            "Hello!",
+            confirm_send=True,
+            profile_urn="ACoAAB1IelEB",
+            dry_run=False,
         )
 
         mock_extractor.send_message.reset_mock()
@@ -2279,12 +2329,14 @@ class TestMessagingTools:
             True,
             mock_context,
             profile_urn="urn:li:fsd_profile:ACoAAB1IelEB",
+            dry_run=False,
         )
         mock_extractor.send_message.assert_awaited_once_with(
             "testuser",
             "Hello!",
             confirm_send=True,
             profile_urn="urn:li:fsd_profile:ACoAAB1IelEB",
+            dry_run=False,
         )
 
     async def test_send_message_error(self, mock_context, serve_extractor):

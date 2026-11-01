@@ -913,14 +913,25 @@ def main(argv: Sequence[str] | None = None) -> None:
             shared = _obtain_shared_owner(config)
 
             # Create and run the MCP server
+            from linkedin_mcp_server.prospecting_limits import ProspectingLimits
+
+            limits = ProspectingLimits(
+                config.server.daily_invite_limit,
+                config.server.daily_message_limit,
+                config.server.prospecting_state_dir,
+            )
             from linkedin_mcp_server.daemon.discovery import Unanswered
 
             if shared is None:
-                mcp = create_mcp_server(tool_timeout=config.server.tool_timeout_seconds)
+                mcp = create_mcp_server(
+                    tool_timeout=config.server.tool_timeout_seconds,
+                    prospecting_limits=limits,
+                )
             elif isinstance(shared, Unanswered):
                 mcp = create_mcp_server(
                     tool_timeout=config.server.tool_timeout_seconds,
                     silent_owner=shared,
+                    prospecting_limits=limits,
                 )
             else:
                 mcp = create_mcp_server(

@@ -91,6 +91,47 @@ def _signals(
 
 
 class TestConnectWithPerson:
+    @pytest.mark.parametrize("closed", [True, False])
+    async def test_dry_run_prepares_and_dismisses_without_submit(
+        self, mock_page, closed
+    ):
+        actions = _actions(mock_page, _reads("Jane profile"))
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                return_value=_signals(invite=True),
+            ),
+            patch.object(PageNavigator, "_navigate_to_page", new_callable=AsyncMock),
+            patch.object(
+                actions,
+                "_dialog_is_open",
+                new_callable=AsyncMock,
+                side_effect=[True, not closed],
+            ),
+            patch.object(
+                actions,
+                "_fill_dialog_textarea",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(actions, "_dismiss_dialog", new_callable=AsyncMock) as dismiss,
+            patch.object(
+                actions, "_click_dialog_primary_button", new_callable=AsyncMock
+            ) as submit,
+        ):
+            mock_page.locator.return_value.count = AsyncMock(return_value=1)
+            result = await actions.connect_with_person(
+                "testuser", note="Hello", dry_run=True
+            )
+        assert result["status"] == ("preview" if closed else "connect_unavailable")
+        if closed:
+            assert result["note"] == "Hello"
+            assert result["connection_state"] == "connectable"
+        dismiss.assert_awaited_once()
+        submit.assert_not_awaited()
+
     async def test_connectable_navigates_deeplink_and_verifies(self, mock_page):
         """Connect via deeplink: dialog opens, submit succeeds, anchor disappears."""
         text = "Jane\n\n· 3rd\n\nEngineer\n\nConnect\nMore\nAbout\n"

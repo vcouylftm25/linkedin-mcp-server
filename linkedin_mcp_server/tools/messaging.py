@@ -26,12 +26,16 @@ from linkedin_mcp_server.linkedin.identifiers import (
     normalize_profile_urn,
     normalize_thread_id,
 )
+from linkedin_mcp_server.prospecting_limits import ProspectingLimits
 
 logger = logging.getLogger(__name__)
 
 
 def register_messaging_tools(
-    mcp: FastMCP, *, tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS
+    mcp: FastMCP,
+    *,
+    tool_timeout: float = DEFAULT_TOOL_TIMEOUT_SECONDS,
+    limits: ProspectingLimits | None = None,
 ) -> None:
     """Register all messaging-related tools with the MCP server."""
 
@@ -268,6 +272,7 @@ def register_messaging_tools(
         confirm_send: bool,
         ctx: Context,
         profile_urn: str | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """
         Compose and send a new message to a LinkedIn user.
@@ -306,6 +311,7 @@ def register_messaging_tools(
                 is removed, as LinkedIn does when sending. Tab, other control
                 characters, DEL, U+0085, U+2028 and U+2029 are refused.
             confirm_send: Must be True to send the message
+            dry_run: Fill the verified composer, return a preview, and discard the draft without sending.
             ctx: FastMCP context for progress reporting
             profile_urn: Optional profile URN (e.g. ACoAAB...) to verify against
                 the URN exposed by the loaded profile before opening its Message
@@ -328,6 +334,8 @@ def register_messaging_tools(
             than the page: the call's answer never arrived from the browser
             process, so ``sent`` is absent instead of false and only LinkedIn
             itself can say whether the message left.
+            ``preview`` includes recipient, text and connection_state and does
+            not consume the daily message allowance.
         """
         # Answered before a session is acquired. Caller-owned message
         # validation needs no browser, and acquiring one can spend a login
@@ -339,7 +347,17 @@ def register_messaging_tools(
         linkedin_username = normalize_person_identifier(linkedin_username)
         if profile_urn is not None:
             profile_urn = normalize_profile_urn(profile_urn)
-        extractor = await get_ready_extractor(ctx, tool_name="send_message")
+        token = (
+            limits.reserve("message")
+            if limits is not None and confirm_send and not dry_run
+            else None
+        )
+        try:
+            extractor = await get_ready_extractor(ctx, tool_name="send_message")
+        except BaseException:
+            if token is not None and limits is not None:
+                limits.release(token)
+            raise
         logger.info(
             "Sending message to %s (confirm_send=%s)",
             linkedin_username,
@@ -353,7 +371,15 @@ def register_messaging_tools(
             message,
             confirm_send=confirm_send,
             profile_urn=profile_urn,
+            dry_run=dry_run,
         )
+        if (
+            token is not None
+            and limits is not None
+            and result.get("status") != "sent"
+            and result.get("retry_safe") is not False
+        ):
+            limits.release(token)
 
         try:
             # The send has already answered, and this notification is the

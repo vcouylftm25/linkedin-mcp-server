@@ -48,6 +48,7 @@ from linkedin_mcp_server.tools.company import register_company_tools
 from linkedin_mcp_server.tools.feed import register_feed_tools
 from linkedin_mcp_server.tools.job import register_job_tools
 from linkedin_mcp_server.tools.messaging import register_messaging_tools
+from linkedin_mcp_server.prospecting_limits import ProspectingLimits
 from linkedin_mcp_server.tools.person import register_person_tools
 from linkedin_mcp_server.tools.post import register_post_tools
 
@@ -175,6 +176,7 @@ def create_mcp_server(
     auth_token: str | None = None,
     proxy_backend: "DaemonProxyBackend | None" = None,
     silent_owner: "Unanswered | None" = None,
+    prospecting_limits: "ProspectingLimits | None" = None,
 ) -> FastMCP:
     """Create and configure the MCP server with all LinkedIn tools.
 
@@ -320,10 +322,12 @@ def create_mcp_server(
     # Every local registration below drives Chromium, so a proxy takes none of
     # them and serves the owner's through the provider above instead.
     if role.drives_browser:
-        register_person_tools(mcp, tool_timeout=tool_timeout)
+        register_person_tools(mcp, tool_timeout=tool_timeout, limits=prospecting_limits)
         register_company_tools(mcp, tool_timeout=tool_timeout)
         register_job_tools(mcp, tool_timeout=tool_timeout)
-        register_messaging_tools(mcp, tool_timeout=tool_timeout)
+        register_messaging_tools(
+            mcp, tool_timeout=tool_timeout, limits=prospecting_limits
+        )
         register_feed_tools(mcp, tool_timeout=tool_timeout)
         register_post_tools(mcp, tool_timeout=tool_timeout)
 

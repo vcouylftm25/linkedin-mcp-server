@@ -547,7 +547,7 @@ class ConnectionActions:
         )
 
     async def _submit_invite_dialog(
-        self, note: str | None
+        self, note: str | None, *, dry_run: bool = False
     ) -> tuple[bool, bool, str | None]:
         """Submit the invite dialog opened by the custom-invite deeplink.
 
@@ -651,6 +651,10 @@ class ConnectionActions:
                     return False, False, note_limit_message
                 await self._dismiss_dialog()
                 return False, False, None
+
+        if dry_run:
+            await self._dismiss_dialog()
+            return not await self._dialog_is_open(timeout=300), False, None
 
         sent = await self._click_dialog_primary_button()
         if not sent:
@@ -781,6 +785,7 @@ class ConnectionActions:
         username: str,
         *,
         note: str | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """Send a LinkedIn connection request or accept an incoming one.
 
@@ -836,6 +841,19 @@ class ConnectionActions:
             )
 
         if state == "incoming_request":
+            if dry_run:
+                return {
+                    **_connection_result(
+                        url,
+                        "preview",
+                        "Incoming request would be accepted.",
+                        profile=page_text,
+                    ),
+                    "recipient": username,
+                    "connection_state": state,
+                    "note": None,
+                    "dry_run": True,
+                }
             # Accept clicks the first labeled button in the fingerprinted
             # row. There is deliberately no locale-text fallback: clicking
             # a button matched by exact text anywhere in the page risks
@@ -938,7 +956,7 @@ class ConnectionActions:
         await self._navigator._navigate_to_page(invite_url)
 
         submitted, note_sent, note_limit_message = await self._submit_invite_dialog(
-            note
+            note, dry_run=dry_run
         )
         if note_limit_message is not None:
             return _connection_result(
@@ -955,6 +973,20 @@ class ConnectionActions:
                 "LinkedIn did not open a usable invite dialog for this profile.",
                 profile=page_text,
             )
+
+        if dry_run:
+            return {
+                **_connection_result(
+                    url,
+                    "preview",
+                    "Invitation ready; dialog dismissed without sending.",
+                    profile=page_text,
+                ),
+                "recipient": username,
+                "connection_state": state,
+                "note": note,
+                "dry_run": True,
+            }
 
         verified = await self._read_main_profile(username)
         verified_signals = await self._read_action_signals(username)

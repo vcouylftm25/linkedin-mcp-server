@@ -59,13 +59,22 @@ Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https
 |------|-------------|
 | `get_person_profile` | Read profile sections such as experience, education, skills, projects, volunteering, and posts. |
 | `get_my_profile` | Read your own profile, with the same section selection as other profiles. |
-| `connect_with_person` | Send a connection request with an optional note, or accept an incoming one. |
+| `connect_with_person` | Preview with `dry_run=true`, or send a connection request with an optional note or accept an incoming one. |
 | `get_sidebar_profiles` | Find recommended profile links, including people you may know. |
 | `get_inbox` | List recent inbox conversations, with links to open individual threads. |
 | `get_conversation` | Read a conversation's messages using a LinkedIn username or thread ID. |
 | `search_conversations` | Search messages by keyword and return links to matching conversation threads. |
 | `archive_conversation` | Archive a conversation by thread ID; a repeat call reports it already archived. |
-| `send_message` | Send after confirmation; profile targets may open a new DM ([#483](https://github.com/stickerdaniel/linkedin-mcp-server/issues/483)). |
+| `send_message` | Preview the filled composer with `dry_run=true`, or send after confirmation; profile targets may open a new DM ([#483](https://github.com/stickerdaniel/linkedin-mcp-server/issues/483)). |
+
+Daily write caps default to 20 invitations and 40 messages per local day. Set
+`DAILY_INVITE_LIMIT` and `DAILY_MESSAGE_LIMIT`, or use `--daily-invite-limit`
+and `--daily-message-limit`; `0` disables that cap. Counter data lives in
+`$XDG_STATE_HOME/linkedin-mcp-server/prospecting.sqlite3` (or
+`~/.local/state/linkedin-mcp-server/prospecting.sqlite3`). Set
+`PROSPECTING_STATE_DIR` or `--prospecting-state-dir` to use another directory.
+The counter is separate from the browser profile. A rejected send does not
+open the browser; an uncertain send consumes a slot until the next local day.
 | `get_company_profile` | Read company information, with optional sections for posts and open jobs. |
 | `get_company_posts` | Read recent posts from a company's feed, with links to the original posts. |
 | `search_companies` | Find companies by keyword and return links to their LinkedIn profiles. |

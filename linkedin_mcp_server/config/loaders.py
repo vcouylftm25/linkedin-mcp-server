@@ -144,6 +144,9 @@ class EnvironmentKeys:
     AUTO_IMPORT_FROM_BROWSER = "AUTO_IMPORT_FROM_BROWSER"
     DAEMON_ENABLED = "DAEMON_ENABLED"
     INSTALLER_TEMP_DIR = "INSTALLER_TEMP_DIR"
+    DAILY_INVITE_LIMIT = "DAILY_INVITE_LIMIT"
+    DAILY_MESSAGE_LIMIT = "DAILY_MESSAGE_LIMIT"
+    PROSPECTING_STATE_DIR = "PROSPECTING_STATE_DIR"
 
 
 # What ``manifest.json`` fills from ``user_config``, and the exact string each
@@ -217,6 +220,19 @@ def is_interactive_environment() -> bool:
 
 def load_from_env(config: AppConfig) -> AppConfig:
     """Load configuration from environment variables."""
+    for key, field_name in (
+        (EnvironmentKeys.DAILY_INVITE_LIMIT, "daily_invite_limit"),
+        (EnvironmentKeys.DAILY_MESSAGE_LIMIT, "daily_message_limit"),
+    ):
+        if raw := _env(key):
+            try:
+                setattr(config.server, field_name, int(raw))
+            except ValueError as exc:
+                raise ConfigurationError(
+                    f"Invalid {key}: expected a nonnegative integer"
+                ) from exc
+    if path := _env(EnvironmentKeys.PROSPECTING_STATE_DIR):
+        config.server.prospecting_state_dir = path
 
     # Log level
     if log_level_env := os.environ.get(EnvironmentKeys.LOG_LEVEL):
@@ -435,6 +451,9 @@ def load_from_args(config: AppConfig, argv: Sequence[str]) -> AppConfig:
     parser = argparse.ArgumentParser(
         description="LinkedIn MCP Server - A Model Context Protocol server for LinkedIn integration"
     )
+    parser.add_argument("--daily-invite-limit", type=int)
+    parser.add_argument("--daily-message-limit", type=int)
+    parser.add_argument("--prospecting-state-dir")
 
     parser.add_argument(
         "--no-headless",
@@ -837,6 +856,15 @@ def load_from_args(config: AppConfig, argv: Sequence[str]) -> AppConfig:
 
     if args.daemon_enabled is not None:
         config.server.daemon_enabled = args.daemon_enabled
+
+    for field_name in (
+        "daily_invite_limit",
+        "daily_message_limit",
+        "prospecting_state_dir",
+    ):
+        value = getattr(args, field_name)
+        if value is not None:
+            setattr(config.server, field_name, value)
 
     return config
 

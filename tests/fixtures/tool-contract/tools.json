@@ -76,6 +76,11 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "dry_run": {
+          "default": false,
+          "description": "Resolve the recipient and prepare the invitation, then dismiss it before sending.",
+          "type": "boolean"
+        },
         "linkedin_username": {
           "description": "LinkedIn username (e.g., \"stickerdaniel\", \"williamhgates\"). A full profile URL is accepted too and is reduced to the username.",
           "type": "string"
@@ -1061,6 +1066,11 @@
       "properties": {
         "confirm_send": {
           "description": "Must be True to send the message",
+          "type": "boolean"
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Fill the verified composer, return a preview, and discard the draft without sending.",
           "type": "boolean"
         },
         "linkedin_username": {
