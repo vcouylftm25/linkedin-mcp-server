@@ -84,18 +84,42 @@ _PROFILE_MESSAGE_TARGET_JS = r"""() => {
     const main = document.querySelector('main');
     if (!main) return {status: 'unresolved'};
 
-    // The top card is the first section that wraps no other section. LinkedIn
-    // nests it inside a wrapper section and has moved the name between h1 and
-    // h2, so neither its depth nor its heading level is pinned. It is chosen
-    // before its heading is checked, so a card whose name has not rendered yet
-    // stays unresolved instead of yielding to the next section. Sidebar
-    // sections are skipped: they carry other people's Message links.
-    const section = Array.from(main.querySelectorAll('section')).find(
+    // A suggested-profile section can precede the top card and need not live
+    // inside <aside>. Match the current profile's own link when it exists;
+    // otherwise reject sections whose visible person links name someone else.
+    // Text and CSS classes cannot establish the recipient across locales.
+    const pageProfile = /^\/in\/[^/]+\/?$/.exec(window.location.pathname);
+    const personPaths = section => Array.from(
+        section.querySelectorAll('a[href*="/in/"]')
+    ).filter(visible).map(anchor => {
+        try {
+            const url = new URL(anchor.getAttribute('href'), window.location.href);
+            return url.hostname.toLowerCase().replace(/\.$/, '') ===
+                window.location.hostname.toLowerCase().replace(/\.$/, '') &&
+                /^\/in\/[^/]+\/?$/.test(url.pathname)
+                ? url.pathname.replace(/\/?$/, '/') : null;
+        } catch {
+            return null;
+        }
+    }).filter(Boolean);
+    const sections = Array.from(main.querySelectorAll('section')).filter(
         element =>
             visible(element) &&
             !element.closest('aside') &&
             !element.querySelector('section')
     );
+    const currentPath = pageProfile
+        ? window.location.pathname.replace(/\/?$/, '/') : null;
+    const ownSections = currentPath
+        ? sections.filter(element => personPaths(element).includes(currentPath)) : [];
+    if (ownSections.length > 1) return {status: 'unresolved'};
+    // Without a self-link, retain the first-card fallback, but never promote
+    // a section that visibly belongs to a different person.
+    const section = currentPath
+        ? ownSections[0] || sections.find(element =>
+            !personPaths(element).some(path => path !== currentPath)
+        )
+        : sections[0];
     if (!section) return {status: 'unresolved'};
     const headings = Array.from(section.querySelectorAll('h1, h2, h3')).filter(visible);
     const visibleComposeAnchors = Array.from(

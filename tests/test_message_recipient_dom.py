@@ -8,6 +8,7 @@ is loaded and no account action is performed.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -224,6 +225,37 @@ class TestMessageSurfaceDom:
 
 
 class TestProfileMessageTargetDom:
+    async def test_premium_suggestions_before_top_card_do_not_choose_recipient(
+        self, dom_page
+    ):
+        html = (
+            Path(__file__).parent / "fixtures/message-premium-sidebar.html"
+        ).read_text()
+        await dom_page.goto("https://www.linkedin.com/in/testuser/")
+        await dom_page.set_content(html)
+
+        result = await dom_page.evaluate(_PROFILE_MESSAGE_TARGET_JS)
+
+        assert result["status"] == "resolved"
+        assert result["displayName"] == "Test User"
+        assert result["composeHrefs"] == ["/messaging/compose/?recipient=ACoAAB"]
+
+    async def test_premium_suggestions_do_not_hide_unlinked_top_card(self, dom_page):
+        html = (
+            Path(__file__).parent / "fixtures/message-premium-sidebar.html"
+        ).read_text()
+        html = html.replace(
+            '<a href="/in/testuser/"><h2>Test User</h2></a>', "<h2>Test User</h2>"
+        )
+        await dom_page.goto("https://www.linkedin.com/in/testuser/")
+        await dom_page.set_content(html)
+
+        result = await dom_page.evaluate(_PROFILE_MESSAGE_TARGET_JS)
+
+        assert result["status"] == "resolved"
+        assert result["displayName"] == "Test User"
+        assert result["composeHrefs"] == ["/messaging/compose/?recipient=ACoAAB"]
+
     async def test_snapshot_stays_inside_first_top_card(self, dom_page):
         await _set_composer_content(
             dom_page,
