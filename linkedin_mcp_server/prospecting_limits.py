@@ -72,3 +72,41 @@ class ProspectingLimits:
         """Release a slot only when the tool knows no submission happened."""
         with closing(self._open()) as db, db:
             db.execute("DELETE FROM writes WHERE token=?", (token,))
+
+    def report(self) -> dict[str, object]:
+        """Today's used and remaining writes per kind, read-only.
+
+        A limit of 0 means unlimited, so its remaining count is None.
+        """
+        now = datetime.now().astimezone()
+        day = now.date().isoformat()
+        reset = datetime.combine(
+            now.date() + timedelta(days=1), datetime.min.time()
+        ).astimezone()
+        used = {kind: 0 for kind in self.limits}
+        if self.path.exists():
+            with closing(sqlite3.connect(self.path, timeout=30)) as db:
+                try:
+                    rows = db.execute(
+                        "SELECT kind, count(*) FROM writes WHERE day=? GROUP BY kind",
+                        (day,),
+                    ).fetchall()
+                except sqlite3.OperationalError:
+                    rows = []
+            for kind, count in rows:
+                if kind in used:
+                    used[kind] = count
+        counts = {}
+        for kind, limit in self.limits.items():
+            counts[kind] = {
+                "used": used[kind],
+                "limit": limit,
+                "remaining": max(0, limit - used[kind]) if limit else None,
+            }
+        return {
+            "day": day,
+            "resets_at": reset.isoformat(),
+            "invites": counts["invite"],
+            "messages": counts["message"],
+            "state_file": str(self.path),
+        }

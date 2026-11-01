@@ -88,7 +88,8 @@ open the browser; an uncertain send consumes a slot until the next local day.
 | `get_easy_apply_form` | Read an Easy Apply form: each field's label, type, options and prefilled value. Never types or submits. |
 | `get_feed` | Read recent posts from your home feed, with links to the original posts. |
 | `search_posts` | Search posts by keyword, optionally filtered by recency or content type. |
-| `create_post` | Publish a text post with an optional local image; `dry_run=true` previews and discards it; the current audience is retained. |
+| `create_post` | Publish a text post with an optional local image; `dry_run=true` previews and discards it; the current audience is retained; returns `post_url` once published. |
+| `get_prospecting_limits` | Today's used and remaining invites and messages under the local daily caps; read-only. |
 | `get_session_status` | Check your saved login and browser state without opening a browser. |
 | `close_session` | Close the shared browser session without deleting your saved login. |
 

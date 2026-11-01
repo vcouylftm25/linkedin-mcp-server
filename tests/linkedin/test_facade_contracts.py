@@ -129,8 +129,9 @@ async def test_registered_tools_match_extractor_delegates():
     tools = await create_mcp_server().list_tools()
     tool_names = {tool.name for tool in tools}
 
-    # The two session tools read no LinkedIn page, so neither has a delegate.
-    session_tools = {"close_session", "get_session_status"}
+    # The session tools and the local prospecting counter read no LinkedIn
+    # page, so none has a delegate.
+    session_tools = {"close_session", "get_session_status", "get_prospecting_limits"}
     assert tool_names == {*TOOL_DELEGATES, *session_tools}
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert not session_tools & set(TOOL_DELEGATES)

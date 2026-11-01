@@ -576,6 +576,17 @@
           "type": "object"
         }
       },
+      "get_prospecting_limits": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "get_saved_jobs": {
         "input": {
           "additionalProperties": false,

@@ -35,7 +35,7 @@ a page-owning collaborator.
 | `message_sender` | `MessageSender` | `page-owning` |
 | `navigation` | `PageNavigator`, `WaitUntil` | `page-owning` |
 | `person` | `PersonReader` | `page-owning` |
-| `post_publisher` | `COMPOSER_URL`, `MAX_POST_CHARS`, `PostPublisher`, `refuse_an_invalid_image()`, `refuse_an_invalid_post()` | `page-owning` |
+| `post_publisher` | `COMPOSER_URL`, `MAX_POST_CHARS`, `PostPublisher`, `fresh_post_urns()`, `post_permalink()`, `refuse_an_invalid_image()`, `refuse_an_invalid_post()`, `urn_created_ms()` | `page-owning` |
 | `posts` | `PostSearch` | `browser-free` |
 | `profile_page` | `MessageTarget`, `MessageTargetResolution`, `ProfilePageReader`, `ReadMessageTarget` | `browser-free` |
 | `search_urls` | `CONTENT_DATE_POSTED_MAP`, `CONTENT_TYPE_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |

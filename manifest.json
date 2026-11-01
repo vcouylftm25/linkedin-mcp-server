@@ -137,6 +137,10 @@
       "description": "Publish a feed post with optional local image, or preview and discard it with dry_run=true; uses the current LinkedIn audience"
     },
     {
+      "name": "get_prospecting_limits",
+      "description": "Read today's used and remaining connection invites and messages from the local daily caps; opens no browser"
+    },
+    {
       "name": "search_posts",
       "description": "Search LinkedIn posts/content globally by keyword (the 'Posts' tab) with an optional recency filter (past-24h/past-week/past-month) and content-type filter (e.g. documents); returns unordered candidate permalinks in references"
     },

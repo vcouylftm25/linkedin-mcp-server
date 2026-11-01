@@ -123,7 +123,7 @@
       "destructiveHint": true,
       "openWorldHint": true
     },
-    "description": "Publish a feed post, or preview and discard it with dry_run=True.\n\nThe text must have 1 to 3000 characters. An optional local PNG, JPEG,\nGIF or WebP image can be attached. Visibility defaults to current,\nLinkedIn's existing composer audience; requested anyone or connections\nis refused because the audience cannot be verified without reading a\nlocale-dependent label. A result with retry_safe=False means the Post\nclick may have happened: inspect\nprofile activity before attempting another publication.",
+    "description": "Publish a feed post, or preview and discard it with dry_run=True.\n\nThe text must have 1 to 3000 characters. An optional local PNG, JPEG,\nGIF or WebP image can be attached. Visibility defaults to current,\nLinkedIn's existing composer audience; requested anyone or connections\nis refused because the audience cannot be verified without reading a\nlocale-dependent label. A published result carries published=True,\npost_url (the /feed/update/<urn>/ permalink) and urn. A result with\nretry_safe=False means the Post click may have happened: inspect\nprofile activity before attempting another publication.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -666,6 +666,31 @@
       "type": "object"
     },
     "title": "Get Person Profile"
+  },
+  {
+    "_meta": {
+      "fastmcp": {
+        "tags": [
+          "prospecting"
+        ]
+      }
+    },
+    "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Report today's used and remaining connection invites and messages.\n\nReads only the local daily counter and the configured caps\n(--daily-invite-limit, --daily-message-limit); it opens no browser and\nsends nothing. Dry runs never count. A limit of 0 means unlimited and\nreports remaining as null. Counts reset at local midnight.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "get_prospecting_limits",
+    "outputSchema": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "title": "Get Prospecting Limits"
   },
   {
     "_meta": {
