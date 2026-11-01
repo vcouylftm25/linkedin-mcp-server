@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -392,45 +394,280 @@ class PostPublisher:
                 **details,
             )
 
-        progress.submitted = True
-        clicked = await self._composer("post")
-        if clicked.get("result") != "clicked":
-            # Only an answer that says nothing was clicked clears the flag; an
-            # empty or odd answer leaves the click possible.
-            if clicked.get("result") == "unavailable":
-                progress.submitted = False
+        capture = _UrnCapture(self._page)
+        capture.start()
+        try:
+            progress.submitted = True
+            click_ms = _now_ms()
+            clicked = await self._composer("post")
+            if clicked.get("result") != "clicked":
+                # Only an answer that says nothing was clicked clears the flag;
+                # an empty or odd answer leaves the click possible.
+                if clicked.get("result") == "unavailable":
+                    progress.submitted = False
+                    return _result(
+                        "post_button_unavailable",
+                        "The Post button could not be clicked; nothing was posted.",
+                        **details,
+                    )
                 return _result(
-                    "post_button_unavailable",
-                    "The Post button could not be clicked; nothing was posted.",
+                    "unconfirmed",
+                    "The Post click could not be confirmed; check your profile "
+                    "activity before retrying.",
+                    retry_safe=False,
                     **details,
                 )
+
+            deadline = self._session.monotonic() + _PUBLISH_WAIT_SECONDS
+            closed = False
+            while self._session.monotonic() < deadline:
+                await self._session.delay(_POLL_SECONDS)
+                if (await self._composer()).get("dialogs") == 0:
+                    closed = True
+                    break
+            if not closed:
+                return _result(
+                    "unconfirmed",
+                    "Post was clicked but the composer did not close; check your "
+                    "profile activity before retrying.",
+                    retry_safe=False,
+                    **details,
+                )
+
+            urn = await self._find_published_urn(wanted, click_ms, capture)
+            if urn is None:
+                return _result(
+                    "submitted",
+                    "The composer closed after Post was clicked, but the new "
+                    "post's permalink was not found. Check profile activity to "
+                    "confirm publication before retrying.",
+                    retry_safe=False,
+                    **details,
+                )
+            post_url = post_permalink(urn)
             return _result(
-                "unconfirmed",
-                "The Post click could not be confirmed; check your profile "
-                "activity before retrying.",
+                "published",
+                "Post published.",
+                published=True,
                 retry_safe=False,
+                url=post_url,
+                post_url=post_url,
+                urn=urn,
                 **details,
             )
+        finally:
+            await capture.stop()
 
-        deadline = self._session.monotonic() + _PUBLISH_WAIT_SECONDS
-        while self._session.monotonic() < deadline:
+    async def _find_published_urn(
+        self, wanted: str, click_ms: int, capture: _UrnCapture
+    ) -> str | None:
+        """Name the post just published, or None when no evidence identifies it.
+
+        Evidence, in order: navigation that already names the post; the
+        confirmation toast's "View post" link or the answer to a POST sent
+        after the click (the publish call), accepted only for post ids minted
+        after the click (LinkedIn ids carry their creation time); then the
+        item of the user's own recent activity whose text matches the post.
+        """
+        identity = self._post_identity()
+        if identity:
+            return identity["urn"]
+        window = (click_ms - _CLOCK_SKEW_MS, None)
+        deadline = self._session.monotonic() + _TOAST_WAIT_SECONDS
+        while True:
+            try:
+                hrefs = await self._session.run_on_linkedin(_TOAST_LINKS_JS)
+            except Exception:
+                logger.debug("Could not read the post confirmation", exc_info=True)
+                hrefs = []
+            await capture.settle()
+            found = fresh_post_urns(
+                " ".join(hrefs if isinstance(hrefs, list) else []), *window
+            ) or fresh_post_urns(capture.text(submissions_only=True), *window)
+            if found:
+                return found[0]
+            if self._session.monotonic() >= deadline:
+                break
             await self._session.delay(_POLL_SECONDS)
-            if (await self._composer()).get("dialogs") == 0:
-                identity = self._post_identity()
-                return _result(
-                    "published" if identity else "submitted",
-                    "The composer closed after Post was clicked. Check profile "
-                    "activity to confirm publication when no permalink is available.",
-                    published=bool(identity),
-                    retry_safe=False,
-                    url=identity.get("url", COMPOSER_URL),
-                    **({"urn": identity["urn"]} if identity else {}),
-                    **details,
-                )
-        return _result(
-            "unconfirmed",
-            "Post was clicked but the composer did not close; check your "
-            "profile activity before retrying.",
-            retry_safe=False,
-            **details,
+        try:
+            return await self._urn_from_recent_activity(wanted, click_ms, capture)
+        except Exception:
+            logger.debug("Could not read recent activity", exc_info=True)
+            return None
+
+    async def _urn_from_recent_activity(
+        self, wanted: str, click_ms: int, capture: _UrnCapture
+    ) -> str | None:
+        await self._navigator._navigate_to_page("https://www.linkedin.com/in/me/")
+        match = re.search(r"/in/([^/?#]+)", getattr(self._page, "url", ""))
+        if not match or match.group(1) == "me":
+            return None
+        await self._navigator._navigate_to_page(
+            f"https://www.linkedin.com/in/{match.group(1)}/recent-activity/all/"
         )
+        lo = click_ms - _CLOCK_SKEW_MS
+        first_line = _lines(wanted)[0].strip() if _lines(wanted) else wanted
+        deadline = self._session.monotonic() + _ACTIVITY_WAIT_SECONDS
+        while True:
+            state = await self._session.run_on_linkedin(_ACTIVITY_ITEMS_JS)
+            items = state.get("items", []) if isinstance(state, dict) else []
+            for item in items:
+                text = item.get("text") or ""
+                urns = fresh_post_urns(" ".join(item.get("ids") or []), lo, None)
+                if urns and first_line in text:
+                    return urns[0]
+            matched_text = any(first_line in (i.get("text") or "") for i in items)
+            if matched_text:
+                await capture.settle()
+                # The post is on the page but its item names no id: a fresh id
+                # in what the page loaded can only be this post's.
+                found = fresh_post_urns(capture.text(), lo, None)
+                if found:
+                    return found[0]
+            if self._session.monotonic() >= deadline:
+                return None
+            await self._session.delay(_POLL_SECONDS)
+
+
+_TOAST_WAIT_SECONDS = 6.0
+_ACTIVITY_WAIT_SECONDS = 10.0
+# Tolerated difference between this machine's clock and LinkedIn's.
+_CLOCK_SKEW_MS = 30_000
+_CAPTURE_LIMIT = 2_000_000
+_POST_URN_RE = re.compile(
+    r"urn(?::|%3A|%3a)li(?::|%3A|%3a)(activity|share|ugcPost)(?::|%3A|%3a)(\d{15,21})"
+)
+_KIND_ORDER = {"activity": 0, "share": 1, "ugcPost": 2}
+
+# Post links inside the confirmation toast ("View post"). Only toast and
+# live-region anchors are read, never the feed behind the composer.
+_TOAST_LINKS_JS = r"""
+() => Array.from(document.querySelectorAll(
+    '[role="alert"] a[href], [role="status"] a[href], [aria-live] a[href], [class*="toast"] a[href]'
+  ))
+  .map((a) => a.getAttribute('href') || '')
+  .filter((h) => /urn(:|%3A)li(:|%3A)/i.test(h))
+"""
+
+# Each recent-activity item with its text and every post id it carries.
+_ACTIVITY_ITEMS_JS = r"""
+() => {
+  const main = document.querySelector('main') || document.body;
+  const roots = Array.from(main.querySelectorAll(
+    'article, [data-urn^="urn:li:"], [data-id^="urn:li:"], li.profile-creator-shared-feed-update__container'
+  ));
+  const outer = roots.filter((r) => !roots.some((o) => o !== r && o.contains(r)));
+  return { items: outer.slice(0, 10).map((root) => {
+    const ids = [];
+    [root, ...root.querySelectorAll('[data-urn],[data-id],a[href]')].forEach((e) => {
+      ['data-urn', 'data-id', 'href'].forEach((k) => {
+        const v = e.getAttribute(k);
+        if (v && v.includes('urn')) ids.push(v);
+      });
+    });
+    return { text: (root.innerText || '').trim().slice(0, 4000), ids };
+  }) };
+}
+"""
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def urn_created_ms(post_id: str) -> int:
+    """LinkedIn post ids carry their creation time in their top bits."""
+    return int(post_id) >> 22
+
+
+def fresh_post_urns(text: str, since_ms: int, until_ms: int | None) -> list[str]:
+    """Post URNs in *text* minted at or after *since_ms*, activity first."""
+    found: dict[str, tuple[int, int]] = {}
+    for match in _POST_URN_RE.finditer(text or ""):
+        kind, post_id = match.group(1), match.group(2)
+        created = urn_created_ms(post_id)
+        if created < since_ms or (until_ms is not None and created > until_ms):
+            continue
+        found.setdefault(f"urn:li:{kind}:{post_id}", (_KIND_ORDER[kind], -created))
+    return sorted(found, key=lambda urn: found[urn])
+
+
+def post_permalink(urn: str) -> str:
+    return f"https://www.linkedin.com/feed/update/{urn}/"
+
+
+class _UrnCapture:
+    """Collect the text of LinkedIn responses that arrive after Post is clicked."""
+
+    def __init__(self, page: Any) -> None:
+        self._page = page
+        self._chunks: list[str] = []
+        self._submissions: list[str] = []
+        self._size = 0
+        self._tasks: list[asyncio.Task[None]] = []
+        self._subscribed = False
+
+    def _handle(self, response: Any) -> None:
+        try:
+            url = response.url
+            headers = response.headers or {}
+            content_type = headers.get("content-type", "")
+            method = (response.request.method or "").upper()
+        except Exception:
+            return
+        if "linkedin.com" not in url or not any(
+            kind in content_type for kind in ("json", "html", "text/plain")
+        ):
+            return
+
+        async def read() -> None:
+            try:
+                body = await response.text()
+            except Exception:
+                return
+            if body and self._size < _CAPTURE_LIMIT:
+                chunk = body[: _CAPTURE_LIMIT - self._size]
+                self._chunks.append(chunk)
+                if method == "POST":
+                    self._submissions.append(chunk)
+                self._size += len(chunk)
+
+        self._tasks.append(asyncio.ensure_future(read()))
+
+    def start(self) -> None:
+        on = getattr(self._page, "on", None)
+        if on is None:
+            return
+        try:
+            on("response", self._handle)
+            self._subscribed = True
+        except Exception:
+            logger.debug("Could not watch responses", exc_info=True)
+
+    async def settle(self, timeout: float = 0.5) -> None:
+        """Let body reads already under way finish, briefly."""
+        pending = [t for t in self._tasks if not t.done()]
+        if pending:
+            await asyncio.wait(pending, timeout=timeout)
+
+    def text(self, *, submissions_only: bool = False) -> str:
+        """Captured bodies; only POST answers (the publish call) when asked."""
+        return "\n".join(self._submissions if submissions_only else self._chunks)
+
+    async def stop(self) -> None:
+        if self._subscribed:
+            try:
+                self._page.remove_listener("response", self._handle)
+            except Exception:
+                logger.debug("Could not stop watching responses", exc_info=True)
+            self._subscribed = False
+        pending = [t for t in self._tasks if not t.done()]
+        if pending:
+            await asyncio.wait(pending, timeout=2.0)
+            for task in pending:
+                if not task.done():
+                    task.cancel()
+        for task in self._tasks:
+            if task.done() and not task.cancelled():
+                task.exception()
+        self._tasks.clear()

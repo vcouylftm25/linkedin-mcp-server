@@ -51,8 +51,9 @@ def register_post_tools(
         GIF or WebP image can be attached. Visibility defaults to current,
         LinkedIn's existing composer audience; requested anyone or connections
         is refused because the audience cannot be verified without reading a
-        locale-dependent label. A result with retry_safe=False means the Post
-        click may have happened: inspect
+        locale-dependent label. A published result carries published=True,
+        post_url (the /feed/update/<urn>/ permalink) and urn. A result with
+        retry_safe=False means the Post click may have happened: inspect
         profile activity before attempting another publication.
         """
         for refusal in (

@@ -57,6 +57,19 @@ class FakeComposer:
         self.image_inputs = 1
         self.keys: list[str] = []
         self.keyboard = self
+        self.toast_links: list[str] = []
+        self.activity_items: list[dict[str, Any]] = []
+        self.redirects: dict[str, str] = {}
+        self.listeners: list[Any] = []
+        self.responses_after_post: list[Any] = []
+
+    # response events
+    def on(self, event: str, handler: Any) -> None:
+        assert event == "response"
+        self.listeners.append(handler)
+
+    def remove_listener(self, event: str, handler: Any) -> None:
+        self.listeners.remove(handler)
 
     # keyboard
     def locator(self, selector: str) -> FakeComposer:
@@ -100,6 +113,9 @@ class FakeComposer:
         if mode == "post":
             if state["postEnabled"]:
                 self.posted = True
+                for response in self.responses_after_post:
+                    for handler in list(self.listeners):
+                        handler(response)
                 if self.post_url is not None:
                     self.url = self.post_url
                 self.dialog_open = not self.closes_on_post
@@ -134,22 +150,29 @@ class FakeSession:
     async def check_rate_limit(self) -> None:
         return None
 
-    async def run_on_linkedin(self, script: str, arg: Any = None) -> dict[str, Any]:
+    async def run_on_linkedin(self, script: str, arg: Any = None) -> Any:
+        if script is post_publisher._TOAST_LINKS_JS:
+            return list(self.page.toast_links)
+        if script is post_publisher._ACTIVITY_ITEMS_JS:
+            return {"items": list(self.page.activity_items)}
         assert script is post_publisher._COMPOSER_JS
         return self.page.script(arg)
 
 
 class FakeNavigator:
-    def __init__(self) -> None:
+    def __init__(self, composer: FakeComposer | None = None) -> None:
         self.urls: list[str] = []
+        self.composer = composer
 
     async def _navigate_to_page(self, url: str, *, deadline: float | None = None):
         self.urls.append(url)
+        if self.composer is not None:
+            self.composer.url = self.composer.redirects.get(url, url)
 
 
 def make(**kwargs: Any) -> tuple[PostPublisher, FakeComposer, FakeNavigator]:
     composer = FakeComposer(**kwargs)
-    navigator = FakeNavigator()
+    navigator = FakeNavigator(composer)
     publisher = PostPublisher(
         cast(PageSession, FakeSession(composer)), cast(PageNavigator, navigator)
     )
@@ -377,3 +400,154 @@ async def test_text_that_cannot_be_posted_is_refused_before_navigation(text):
 
 def test_the_longest_allowed_post_is_accepted():
     assert post_publisher.refuse_an_invalid_post("x" * MAX_POST_CHARS) is None
+
+
+# --- publication evidence -------------------------------------------------
+
+CLICK_MS = 1_793_500_000_000
+
+
+def post_id(created_ms: int, low: int = 12345) -> str:
+    return str((created_ms << 22) | low)
+
+
+class FakeRequest:
+    def __init__(self, method: str) -> None:
+        self.method = method
+
+
+class FakeResponse:
+    def __init__(self, body: str, *, method: str = "POST") -> None:
+        self.url = "https://www.linkedin.com/voyager/api/contentcreation/normShares"
+        self.headers = {"content-type": "application/json"}
+        self.request = FakeRequest(method)
+        self._body = body
+
+    async def text(self) -> str:
+        return self._body
+
+
+@pytest.fixture
+def frozen_click(monkeypatch: pytest.MonkeyPatch) -> int:
+    monkeypatch.setattr(post_publisher, "_now_ms", lambda: CLICK_MS)
+    return CLICK_MS
+
+
+def test_fresh_post_urns_keeps_ids_minted_after_the_click_activity_first():
+    new = post_id(CLICK_MS + 800)
+    old = post_id(CLICK_MS - 3_600_000)
+    text = f"urn:li:ugcPost:{new} urn%3Ali%3Aactivity%3A{new} urn:li:activity:{old}"
+    assert post_publisher.fresh_post_urns(text, CLICK_MS - 30_000, None) == [
+        f"urn:li:activity:{new}",
+        f"urn:li:ugcPost:{new}",
+    ]
+    assert post_publisher.urn_created_ms(new) == CLICK_MS + 800
+
+
+async def test_the_toast_view_post_link_names_the_published_post(frozen_click):
+    publisher, composer, _ = make()
+    new = post_id(CLICK_MS + 1500)
+    composer.toast_links = [f"/feed/update/urn:li:activity:{new}/"]
+
+    result = await publisher.create_post("Hello")
+
+    assert result["status"] == "published"
+    assert result["published"] is True
+    assert result["urn"] == f"urn:li:activity:{new}"
+    assert (
+        result["post_url"]
+        == f"https://www.linkedin.com/feed/update/urn:li:activity:{new}/"
+    )
+    assert result["url"] == result["post_url"]
+    assert result["retry_safe"] is False
+    assert composer.listeners == []
+
+
+async def test_a_link_to_an_older_post_is_never_taken_for_the_new_one(frozen_click):
+    publisher, composer, _ = make()
+    composer.toast_links = [
+        f"/feed/update/urn:li:activity:{post_id(CLICK_MS - 600_000)}/"
+    ]
+
+    result = await publisher.create_post("Hello")
+
+    assert result["status"] == "submitted"
+    assert result["published"] is False
+    assert result["retry_safe"] is False
+
+
+async def test_the_publish_call_answer_names_the_post(frozen_click):
+    publisher, composer, _ = make()
+    new = post_id(CLICK_MS + 400)
+    composer.responses_after_post = [
+        FakeResponse(
+            f'{{"urn":"urn:li:share:{new}","activity":"urn:li:activity:{new}"}}'
+        )
+    ]
+
+    result = await publisher.create_post("Hello")
+
+    assert result["published"] is True
+    assert result["urn"] == f"urn:li:activity:{new}"
+    assert composer.listeners == []
+
+
+async def test_a_fresh_id_in_a_page_read_alone_is_not_evidence(frozen_click):
+    publisher, composer, _ = make()
+    composer.responses_after_post = [
+        FakeResponse(f'"urn:li:activity:{post_id(CLICK_MS + 400)}"', method="GET")
+    ]
+
+    result = await publisher.create_post("Hello")
+
+    assert result["status"] == "submitted"
+    assert result["published"] is False
+
+
+async def test_recent_activity_matching_the_text_names_the_post(frozen_click):
+    publisher, composer, navigator = make()
+    new = post_id(CLICK_MS + 2000)
+    composer.redirects = {
+        "https://www.linkedin.com/in/me/": "https://www.linkedin.com/in/victor/"
+    }
+    composer.activity_items = [
+        {"text": "Victor\nagora\nHello", "ids": [f"urn:li:activity:{new}"]},
+        {"text": "older", "ids": [f"urn:li:activity:{post_id(CLICK_MS - 9_000_000)}"]},
+    ]
+
+    result = await publisher.create_post("Hello")
+
+    assert (
+        navigator.urls[-1] == "https://www.linkedin.com/in/victor/recent-activity/all/"
+    )
+    assert result["published"] is True
+    assert result["urn"] == f"urn:li:activity:{new}"
+
+
+async def test_recent_activity_whose_text_differs_is_not_taken(frozen_click):
+    publisher, composer, _ = make()
+    composer.redirects = {
+        "https://www.linkedin.com/in/me/": "https://www.linkedin.com/in/victor/"
+    }
+    composer.activity_items = [
+        {
+            "text": "Something else",
+            "ids": [f"urn:li:activity:{post_id(CLICK_MS + 2000)}"],
+        }
+    ]
+
+    result = await publisher.create_post("Hello")
+
+    assert result["status"] == "submitted"
+    assert result["published"] is False
+
+
+async def test_a_dry_run_never_looks_for_a_published_post(frozen_click):
+    publisher, composer, navigator = make()
+    composer.toast_links = [f"/feed/update/urn:li:activity:{post_id(CLICK_MS + 1)}/"]
+
+    result = await publisher.create_post("Hello", dry_run=True)
+
+    assert result["status"] == "dry_run"
+    assert result["published"] is False
+    assert navigator.urls == [COMPOSER_URL]
