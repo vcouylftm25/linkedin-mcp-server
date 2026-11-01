@@ -24,6 +24,10 @@
         "coroutine": true,
         "signature": "(self, username: 'str', *, note: 'str | None' = None) -> 'dict[str, Any]'"
       },
+      "create_post": {
+        "coroutine": true,
+        "signature": "(self, text: 'str', *, dry_run: 'bool' = False, image_path: 'str | None' = None, visibility: 'str' = 'current') -> 'dict[str, Any]'"
+      },
       "dismiss_job": {
         "coroutine": true,
         "signature": "(self, job_id: 'str') -> 'dict[str, Any]'"
@@ -112,6 +116,7 @@
     "tool_methods": [
       "archive_conversation",
       "connect_with_person",
+      "create_post",
       "dismiss_job",
       "extract_feed",
       "extract_page",
@@ -187,6 +192,43 @@
           },
           "required": [
             "linkedin_username"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "create_post": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "dry_run": {
+              "default": false,
+              "type": "boolean"
+            },
+            "image_path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "text": {
+              "type": "string"
+            },
+            "visibility": {
+              "default": "current",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
           ],
           "type": "object"
         },

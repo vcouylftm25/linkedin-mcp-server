@@ -47,6 +47,7 @@ def _make_mock_extractor(result: dict) -> MagicMock:
     mock.get_my_profile = AsyncMock(return_value=result)
     mock.search_companies = AsyncMock(return_value=result)
     mock.search_posts = AsyncMock(return_value=result)
+    mock.create_post = AsyncMock(return_value=result)
     mock.get_company_employees = AsyncMock(return_value=result)
     mock.extract_page = AsyncMock(
         return_value=ExtractedSection(text="some text", references=[])
@@ -260,6 +261,7 @@ _A_VALID_CALL = [
     ),
     ("feed", "get_feed", {}),
     ("post", "search_posts", {"keywords": "python"}),
+    ("post", "create_post", {"text": "Hello", "dry_run": True}),
 ]
 
 
@@ -2668,6 +2670,25 @@ class TestFeedTools:
 
 
 class TestPostTools:
+    async def test_create_post_dry_run_delegates_without_publishing(
+        self, mock_context, serve_extractor
+    ):
+        from linkedin_mcp_server.tools.post import register_post_tools
+
+        expected = {"status": "dry_run", "published": False, "retry_safe": True}
+        extractor = _make_mock_extractor(expected)
+        mcp = FastMCP("test")
+        register_post_tools(mcp)
+        serve_extractor(extractor)
+
+        tool_fn = await get_tool_fn(mcp, "create_post")
+        result = await tool_fn("Hello", mock_context, dry_run=True)
+
+        assert result == expected
+        extractor.create_post.assert_awaited_once_with(
+            "Hello", dry_run=True, image_path=None, visibility="current"
+        )
+
     async def test_search_posts_success(self, mock_context, serve_extractor):
         expected = {
             "url": (
@@ -2766,6 +2787,7 @@ class TestToolTimeouts:
             "send_message",
             "get_feed",
             "search_posts",
+            "create_post",
             "close_session",
         )
 
@@ -2801,6 +2823,7 @@ class TestToolTimeouts:
             "send_message",
             "get_feed",
             "search_posts",
+            "create_post",
             "close_session",
         )
 

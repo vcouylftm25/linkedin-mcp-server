@@ -868,6 +868,21 @@ async def _invalid_message_scenario(message: str, label: str) -> dict[str, Any]:
     )
 
 
+async def _invalid_post_scenario() -> dict[str, Any]:
+    recorder = TraceRecorder("create_post__invalid_blank", _COMMON_ALLOWED)
+    clock = FakeClock(recorder)
+    page = _page(recorder)
+    extractor = _extractor(page)
+    async with boundaries(recorder, clock):
+        with recorder.context("create_post", "post"):
+            result = await extractor.create_post("   ", dry_run=True)
+    page.assert_clean()
+    return recorder.trace(
+        {"method": "create_post", "arguments": {"text_case": "blank", "dry_run": True}},
+        result,
+    )
+
+
 async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
     name = f"{method}__baseline"
     recorder = TraceRecorder(name, _COMMON_ALLOWED)
@@ -1215,6 +1230,7 @@ async def _facade_contract_trace() -> dict[str, Any]:
 
 TOOL_FACADE_METHODS = {
     "connect_with_person",
+    "create_post",
     "dismiss_job",
     "extract_feed",
     "extract_page",
@@ -1297,6 +1313,7 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         ),
         "message-cancelled.json": await _messaging_cancellation_scenario(),
         "message-blank.json": await _invalid_message_scenario("   ", "blank"),
+        "post-blank.json": await _invalid_post_scenario(),
         "message-c0.json": await _invalid_message_scenario("before\tafter", "c0"),
         "message-del.json": await _invalid_message_scenario("text\x7f", "del"),
         "connect.json": await _connect_scenario(),
