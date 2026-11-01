@@ -69,13 +69,9 @@ class ActionSignals:
     primary action ``<button>`` targeting this person."""
 
     has_labeled_action_anchor: bool
-    """At least one ``<a>`` with an ``aria-label`` attribute exists
-    inside the action root. LinkedIn renders the Pending state as an
-    ``<a>`` (linking to the profile URL) with an ``aria-label`` like
-    "Pending, click to withdraw invitation sent to {Name}", whereas the
-    Message anchor carries only ``aria-disabled``. The label *value* is
-    locale-dependent and not read; presence-on-an-``<a>`` is the
-    locale-independent Pending signal."""
+    """A labeled anchor back to this profile exists inside the action root,
+    with no labeled action button beside it. A labeled compose or mutual
+    connection anchor cannot by itself mean an invitation is pending."""
 
     has_incoming_action_row: bool
     """The top-card action row matches the incoming-request fingerprint:
@@ -103,9 +99,8 @@ def detect_connection_state(signals: ActionSignals) -> ConnectionState:
        button in the top card, so the compose-anchor action-root walk
        mis-anchors on sidebar cards whose labeled anchors would
        otherwise satisfy the pending signal.
-    4. ``pending`` — labeled action ``<a>`` in the action root (the
-       Pending control LinkedIn renders for invitations awaiting
-       response).
+    4. ``pending`` — labeled anchor back to this profile without a labeled
+       action button in the root.
     5. ``already_connected`` — compose anchor present in action root and
        no labeled action button. (1st-degree connections render Message
        as the primary action; there is no Follow/Connect button.)
@@ -123,7 +118,7 @@ def detect_connection_state(signals: ActionSignals) -> ConnectionState:
         return "connectable"
     if signals.has_incoming_action_row:
         return "incoming_request"
-    if signals.has_labeled_action_anchor:
+    if signals.has_labeled_action_anchor and not signals.has_labeled_action_button:
         return "pending"
     if signals.has_compose_anchor_in_action_root:
         if signals.has_labeled_action_button:

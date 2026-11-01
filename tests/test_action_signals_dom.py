@@ -309,7 +309,7 @@ def pending_top_card(labels: Labels) -> str:
   <div class="actions">
     <a href="/messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3ADDD"
       >{labels.message}</a>
-    <a href="https://www.linkedin.com/in/florian/"
+    <a href="https://www.linkedin.com/in/{USER}/"
       aria-label="{labels.pending}">{labels.pending}</a>
     <button type="button" aria-expanded="false">{labels.more}</button>
   </div>
@@ -327,6 +327,40 @@ def connectable_top_card(labels: Labels) -> str:
       aria-label="{labels.connect}">{labels.connect}</a>
     <a href="/messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AEEE"
       >{labels.message}</a>
+    <button type="button" aria-expanded="false">{labels.more}</button>
+  </div>
+</section>
+"""
+
+
+def primary_button_with_labeled_other_anchor(labels: Labels) -> str:
+    """Issue #721's reported primary-button shape; its DOM is not supplied.
+
+    This synthetic row checks that an unrelated labeled anchor cannot turn
+    the visible primary action into a false pending result. It does not
+    establish whether the button is Connect or Follow.
+    """
+    return f"""
+<section class="topcard">
+  <h1>Jane</h1>
+  <div class="actions">
+    <button type="button" aria-label="{labels.connect}">{labels.connect}</button>
+    <a href="/messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AEEE"
+      aria-label="{labels.message}">{labels.message}</a>
+    <button type="button" aria-expanded="false">{labels.more}</button>
+  </div>
+</section>
+"""
+
+
+def labeled_unrelated_anchor(labels: Labels) -> str:
+    """A labeled message link alone cannot prove an invitation is pending."""
+    return f"""
+<section class="topcard">
+  <h1>Jane</h1>
+  <div class="actions">
+    <a href="/messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AEEE"
+      aria-label="{labels.message}">{labels.message}</a>
     <button type="button" aria-expanded="false">{labels.more}</button>
   </div>
 </section>
@@ -495,6 +529,12 @@ STATE_CASES: tuple[tuple[str, Build, ConnectionState], ...] = (
         "incoming_request",
     ),
     ("pending", pending_top_card, "pending"),
+    (
+        "primary-button-not-pending",
+        primary_button_with_labeled_other_anchor,
+        "follow_only",
+    ),
+    ("labeled-message-not-pending", labeled_unrelated_anchor, "already_connected"),
     ("already_connected", connected_top_card, "already_connected"),
     ("follow_only", follow_only_top_card, "follow_only"),
     ("unavailable", restricted_top_card, "unavailable"),

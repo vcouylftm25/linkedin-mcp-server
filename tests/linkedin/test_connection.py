@@ -63,6 +63,16 @@ class TestDetectConnectionState:
             == "pending"
         )
 
+    def test_primary_button_prevents_false_pending(self):
+        assert (
+            detect_connection_state(
+                self._signals(
+                    compose_in_root=True, labeled_action=True, labeled_anchor=True
+                )
+            )
+            == "follow_only"
+        )
+
     def test_incoming_request_via_structural_row(self):
         assert (
             detect_connection_state(self._signals(incoming_row=True))
