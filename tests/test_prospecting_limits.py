@@ -81,7 +81,7 @@ def test_report_treats_zero_as_unlimited(tmp_path):
 
 
 def test_sales_nav_navigations_have_a_separate_daily_cap(tmp_path):
-    limits = ProspectingLimits(1, 1, str(tmp_path), navigation_limit=2)
+    limits = ProspectingLimits(1, 1, str(tmp_path), sales_nav_limit=2)
     limits.reserve(SALES_NAV_NAVIGATION_KIND)
     limits.reserve(SALES_NAV_NAVIGATION_KIND)
     with pytest.raises(CodedToolError) as raised:
@@ -92,7 +92,13 @@ def test_sales_nav_navigations_have_a_separate_daily_cap(tmp_path):
         "limit": 2,
         "remaining": 0,
     }
-    assert DEFAULT_SALES_NAV_DAILY_NAVIGATIONS > 0
+    assert limits.report()["navigations"] == {
+        "used": 0,
+        "limit": 100,
+        "remaining": 100,
+    }
+    assert DEFAULT_SALES_NAV_DAILY_NAVIGATIONS == 40
+    assert ProspectingLimits(1, 1, str(tmp_path / "default")).limits["sales_nav"] == 40
 
 
 async def test_get_prospecting_limits_tool_reads_without_a_browser(tmp_path):

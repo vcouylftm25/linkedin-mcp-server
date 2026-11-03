@@ -135,7 +135,17 @@ async def test_registered_tools_match_extractor_delegates():
 
     # The session tools and the local prospecting counter read no LinkedIn
     # page, so none has a delegate.
-    session_tools = {"close_session", "get_session_status", "get_prospecting_limits"}
+    session_tools = {
+        "close_session",
+        "get_session_status",
+        "get_prospecting_limits",
+        "create_campaign",
+        "add_leads",
+        "preview_batch",
+        "approve_batch",
+        "campaign_status",
+        "export_campaign",
+    }
     assert tool_names == {*TOOL_DELEGATES, *session_tools}
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert not session_tools & set(TOOL_DELEGATES)

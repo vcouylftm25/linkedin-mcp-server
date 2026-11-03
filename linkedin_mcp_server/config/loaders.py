@@ -453,7 +453,10 @@ def load_from_args(config: AppConfig, argv: Sequence[str]) -> AppConfig:
     )
     parser.add_argument("--daily-invite-limit", type=int)
     parser.add_argument("--daily-message-limit", type=int)
-    parser.add_argument("--prospecting-state-dir")
+    parser.add_argument(
+        "--prospecting-state-dir",
+        help="Prospecting SQLite root; must match the browser session state root",
+    )
 
     parser.add_argument(
         "--no-headless",

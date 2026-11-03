@@ -159,6 +159,73 @@
       "send_message"
     ],
     "tool_schemas": {
+      "add_leads": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "campaign_id": {
+              "type": "string"
+            },
+            "leads": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "campaign_id",
+            "leads"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "approve_batch": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "campaign_id": {
+              "type": "string"
+            },
+            "items": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "items_hash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "campaign_id",
+            "action",
+            "items"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
       "archive_conversation": {
         "input": {
           "additionalProperties": false,
@@ -170,6 +237,24 @@
           },
           "required": [
             "thread_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "campaign_status": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "campaign_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "campaign_id"
           ],
           "type": "object"
         },
@@ -217,6 +302,35 @@
           },
           "required": [
             "linkedin_username"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "create_campaign": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "filters_json": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
           ],
           "type": "object"
         },
@@ -278,6 +392,30 @@
         },
         "output": {
           "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "export_campaign": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "campaign_id": {
+              "type": "string"
+            },
+            "format": {
+              "default": "json",
+              "type": "string"
+            }
+          },
+          "required": [
+            "campaign_id"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": {
+            "type": "string"
+          },
           "type": "object"
         }
       },
@@ -659,6 +797,28 @@
           },
           "required": [
             "linkedin_username"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "preview_batch": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "campaign_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "campaign_id",
+            "action"
           ],
           "type": "object"
         },

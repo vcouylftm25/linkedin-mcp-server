@@ -87,17 +87,20 @@ _INHERITED_BROWSERS_PATH = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
 
 
 @pytest.fixture(autouse=True)
-def installed_browser_for_dom_tests(request, reset_singletons, monkeypatch):
-    """Give ``browser_dom`` tests the browser cache the run was started with.
+def installed_browser_for_marked_browser_tests(request, reset_singletons, monkeypatch):
+    """Give browser-gated tests the cache the run was started with.
 
     ``reset_bootstrap_for_testing`` deletes ``PLAYWRIGHT_BROWSERS_PATH`` so that
     no bootstrap test measures, reports on or installs into a real cache. That
     also hid a browser installed outside patchright's default cache, such as the
-    server's own under ``~/.linkedin-mcp/patchright-browsers``, and every DOM
-    test skipped. These tests only launch Chromium against synthetic markup, so
-    they get the caller's cache back and nothing else does.
+    server's own under ``~/.linkedin-mcp/patchright-browsers``. DOM tests use
+    Chromium only against synthetic markup; browser contract and identity tests
+    probe or launch only the browser the caller made available.
     """
-    if _INHERITED_BROWSERS_PATH and request.node.get_closest_marker("browser_dom"):
+    if _INHERITED_BROWSERS_PATH and any(
+        request.node.get_closest_marker(marker)
+        for marker in ("browser_dom", "browser_contract", "browser_identity")
+    ):
         monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", _INHERITED_BROWSERS_PATH)
 
 

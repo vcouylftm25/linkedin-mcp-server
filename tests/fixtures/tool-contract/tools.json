@@ -1,5 +1,100 @@
 [
   {
+    "name": "add_leads",
+    "title": "Add Campaign Leads",
+    "description": "Add public profile vanity URLs to a campaign; no browser is used.",
+    "inputSchema": {
+      "properties": {
+        "campaign_id": {
+          "type": "string"
+        },
+        "leads": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "campaign_id",
+        "leads"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "fastmcp": {
+        "tags": [
+          "prospecting"
+        ]
+      }
+    }
+  },
+  {
+    "name": "approve_batch",
+    "title": "Approve Campaign Batch",
+    "description": "Approve visible items. The server issues the token and recomputes hashes.",
+    "inputSchema": {
+      "properties": {
+        "campaign_id": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "items_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "campaign_id",
+        "action",
+        "items"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "fastmcp": {
+        "tags": [
+          "prospecting"
+        ]
+      }
+    }
+  },
+  {
     "_meta": {
       "fastmcp": {
         "tags": [
@@ -34,6 +129,38 @@
       "type": "object"
     },
     "title": "Archive Conversation"
+  },
+  {
+    "name": "campaign_status",
+    "title": "Campaign Status",
+    "description": "Report local campaign states, pause and stale approvals.",
+    "inputSchema": {
+      "properties": {
+        "campaign_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "campaign_id"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "fastmcp": {
+        "tags": [
+          "prospecting"
+        ]
+      }
+    }
   },
   {
     "_meta": {
@@ -109,6 +236,49 @@
       "type": "object"
     },
     "title": "Connect With Person"
+  },
+  {
+    "name": "create_campaign",
+    "title": "Create Campaign",
+    "description": "Create a local prospecting campaign. This never opens LinkedIn.",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "filters_json": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "fastmcp": {
+        "tags": [
+          "prospecting"
+        ]
+      }
+    }
   },
   {
     "_meta": {
@@ -196,6 +366,44 @@
       "type": "object"
     },
     "title": "Dismiss Job"
+  },
+  {
+    "name": "export_campaign",
+    "title": "Export Campaign",
+    "description": "Export campaign rows as CSV or JSON text; no file is written.",
+    "inputSchema": {
+      "properties": {
+        "campaign_id": {
+          "type": "string"
+        },
+        "format": {
+          "default": "json",
+          "type": "string"
+        }
+      },
+      "required": [
+        "campaign_id"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "fastmcp": {
+        "tags": [
+          "prospecting"
+        ]
+      }
+    }
   },
   {
     "_meta": {
@@ -679,7 +887,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Report today's used and remaining connection invites and messages.\n\nReads only the local daily counter and the configured caps\n(--daily-invite-limit, --daily-message-limit); it opens no browser and\nsends nothing. Dry runs never count. A limit of 0 means unlimited and\nreports remaining as null. Counts reset at local midnight.",
+    "description": "Report local daily caps and the active weekly prospecting cap.\n\nReads only the local daily counter and the configured caps\n(--daily-invite-limit, --daily-message-limit); it opens no browser and\nsends nothing. It includes profile visits, Sales Navigator page loads,\nand weekly invite counts.\nA limit of 0 means unlimited and reports remaining as null.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {},
@@ -793,6 +1001,42 @@
       "type": "object"
     },
     "title": "Get Sidebar Profiles"
+  },
+  {
+    "name": "preview_batch",
+    "title": "Preview Campaign Batch",
+    "description": "Show the exact item hashes that an explicit approval would cover.",
+    "inputSchema": {
+      "properties": {
+        "campaign_id": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "campaign_id",
+        "action"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "fastmcp": {
+        "tags": [
+          "prospecting"
+        ]
+      }
+    }
   },
   {
     "_meta": {
