@@ -46,7 +46,7 @@ async def test_status_reads_the_synthetic_sales_nav_surface(sales_nav_extractor)
     assert "Prospecting results" in result["sections"]["status"]
 
 
-async def test_lead_search_returns_rendered_text_and_profile_reference(
+async def test_lead_search_returns_sales_leads_and_public_vanity_when_present(
     sales_nav_extractor,
 ):
     result = await sales_nav_extractor.sales_nav_search_leads(
@@ -54,12 +54,31 @@ async def test_lead_search_returns_rendered_text_and_profile_reference(
     )
 
     assert result["sections"]["search_results"].startswith("Prospecting results")
-    assert result["references"]["search_results"][0] == {
-        "kind": "person",
-        "url": "/in/lead-one/",
-        "text": "Lead One",
-        "context": "Sales Navigator search results",
-    }
+    assert result["leads"] == [
+        {
+            "name": "Ada Example",
+            "title": "Chief Financial Officer",
+            "company": "Northwind Bank",
+            "location": "Sao Paulo",
+            "sales_lead_url": (
+                "/sales/lead/ACwAAASYNTHETIC1,NAME_SEARCH,synthetic-token/"
+            ),
+            "vanity": "ada-example",
+        },
+        {
+            "name": "Bo Example",
+            "title": "Director of Finance",
+            "company": "Contoso Payments",
+            "location": "Rio de Janeiro",
+            "sales_lead_url": (
+                "/sales/lead/ACwAAASYNTHETIC2,NAME_SEARCH,synthetic-token-2/"
+            ),
+            "vanity": None,
+        },
+    ]
+    # This assertion intentionally depends on `/sales/lead/` classification:
+    # removing the classifier makes the structural parser drop both leads.
+    assert result["references"]["search_results"][0]["kind"] == "sales_lead"
 
 
 async def test_account_search_returns_a_generic_company_reference(
@@ -69,12 +88,12 @@ async def test_account_search_returns_a_generic_company_reference(
         "https://www.linkedin.com/sales/search/company?query=accounts"
     )
 
-    assert result["references"]["search_results"][1] == {
-        "kind": "company",
-        "url": "/company/target-bank/",
-        "text": "Target Bank",
-        "context": "Sales Navigator search results",
-    }
+    company = result["references"]["search_results"]
+    assert any(
+        reference["kind"] == "sales_company"
+        and reference["url"] == "/sales/company/900001/"
+        for reference in company
+    )
 
 
 async def test_saved_lead_list_returns_rendered_text_and_profile_reference(
@@ -83,4 +102,4 @@ async def test_saved_lead_list_returns_rendered_text_and_profile_reference(
     result = await sales_nav_extractor.sales_nav_list_leads()
 
     assert "Executive leadership" in result["sections"]["search_results"]
-    assert result["references"]["search_results"][0]["url"] == "/in/lead-one/"
+    assert result["leads"][0]["sales_lead_url"].startswith("/sales/lead/")

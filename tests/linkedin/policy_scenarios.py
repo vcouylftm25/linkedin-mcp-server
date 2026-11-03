@@ -891,6 +891,8 @@ async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
     # facades accept any text.
     text = "About the job\nResult content" if method == "read_job" else "Result content"
     page = _page(recorder).script("evaluate:root_content", _root(text))
+    if method in {"sales_nav_search_leads", "sales_nav_list_leads"}:
+        page.script("evaluate:sales_nav_result_cards", [])
     extractor = _extractor(page)
     arguments: dict[str, Any]
     async with boundaries(recorder, clock):

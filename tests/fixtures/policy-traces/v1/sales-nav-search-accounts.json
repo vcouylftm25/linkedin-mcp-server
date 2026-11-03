@@ -101,7 +101,7 @@
     "pagination": {
       "next_offset": null,
       "pages_fetched": 1,
-      "reason": "single_page",
+      "reason": "complete",
       "result_kind": "accounts"
     },
     "section_names": [

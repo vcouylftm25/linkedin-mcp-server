@@ -6,7 +6,11 @@ from unittest.mock import patch
 import pytest
 
 from linkedin_mcp_server.error_handler import CodedToolError, ErrorCode
-from linkedin_mcp_server.prospecting_limits import ProspectingLimits
+from linkedin_mcp_server.linkedin.sales_nav_read import SALES_NAV_NAVIGATION_KIND
+from linkedin_mcp_server.prospecting_limits import (
+    DEFAULT_SALES_NAV_DAILY_NAVIGATIONS,
+    ProspectingLimits,
+)
 
 
 def test_separate_caps_persist_and_refuse_before_next_action(tmp_path):
@@ -74,6 +78,21 @@ def test_report_treats_zero_as_unlimited(tmp_path):
     report = limits.report()
     assert report["invites"] == {"used": 1, "limit": 0, "remaining": None}
     assert report["messages"] == {"used": 1, "limit": 1, "remaining": 0}
+
+
+def test_sales_nav_navigations_have_a_separate_daily_cap(tmp_path):
+    limits = ProspectingLimits(1, 1, str(tmp_path), navigation_limit=2)
+    limits.reserve(SALES_NAV_NAVIGATION_KIND)
+    limits.reserve(SALES_NAV_NAVIGATION_KIND)
+    with pytest.raises(CodedToolError) as raised:
+        limits.reserve(SALES_NAV_NAVIGATION_KIND)
+    assert raised.value.code == ErrorCode.RATE_LIMITED
+    assert limits.report()["sales_nav"] == {
+        "used": 2,
+        "limit": 2,
+        "remaining": 0,
+    }
+    assert DEFAULT_SALES_NAV_DAILY_NAVIGATIONS > 0
 
 
 async def test_get_prospecting_limits_tool_reads_without_a_browser(tmp_path):

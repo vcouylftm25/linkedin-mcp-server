@@ -93,13 +93,19 @@
       "kind": "evaluate",
       "operation": "root_content",
       "program_digest": "e6b2be4ebddd"
+    },
+    {
+      "call": "sales_nav_list_leads",
+      "kind": "evaluate",
+      "operation": "sales_nav_result_cards",
+      "program_digest": "b038ea6e961b"
     }
   ],
   "result": {
     "pagination": {
       "next_offset": null,
       "pages_fetched": 1,
-      "reason": "single_page",
+      "reason": "complete",
       "result_kind": "leads"
     },
     "section_names": [

@@ -22,7 +22,7 @@
       },
       "connect_with_person": {
         "coroutine": true,
-        "signature": "(self, username: 'str', *, note: 'str | None' = None, dry_run: 'bool' = False) -> 'dict[str, Any]'"
+        "signature": "(self, username: 'str', *, note: 'str | None' = None, dry_run: 'bool' = False, refuse_incoming: 'bool' = False) -> 'dict[str, Any]'"
       },
       "create_post": {
         "coroutine": true,
@@ -90,19 +90,19 @@
       },
       "sales_nav_list_leads": {
         "coroutine": true,
-        "signature": "(self) -> 'dict[str, Any]'"
+        "signature": "(self, *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'"
       },
       "sales_nav_search_accounts": {
         "coroutine": true,
-        "signature": "(self, search_url: 'str') -> 'dict[str, Any]'"
+        "signature": "(self, search_url: 'str', *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'"
       },
       "sales_nav_search_leads": {
         "coroutine": true,
-        "signature": "(self, search_url: 'str') -> 'dict[str, Any]'"
+        "signature": "(self, search_url: 'str', *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'"
       },
       "sales_nav_status": {
         "coroutine": true,
-        "signature": "(self) -> 'dict[str, Any]'"
+        "signature": "(self, *, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'"
       },
       "search_companies": {
         "coroutine": true,
@@ -670,7 +670,14 @@
       "sales_nav_list_leads": {
         "input": {
           "additionalProperties": false,
-          "properties": {},
+          "properties": {
+            "max_pages": {
+              "default": 1,
+              "maximum": 3,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
           "type": "object"
         },
         "output": {
@@ -682,6 +689,12 @@
         "input": {
           "additionalProperties": false,
           "properties": {
+            "max_pages": {
+              "default": 1,
+              "maximum": 3,
+              "minimum": 1,
+              "type": "integer"
+            },
             "search_url": {
               "type": "string"
             }
@@ -700,6 +713,12 @@
         "input": {
           "additionalProperties": false,
           "properties": {
+            "max_pages": {
+              "default": 1,
+              "maximum": 3,
+              "minimum": 1,
+              "type": "integer"
+            },
             "search_url": {
               "type": "string"
             }

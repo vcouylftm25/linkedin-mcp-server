@@ -101,7 +101,7 @@
       "status"
     ],
     "sections": {
-      "status": "The session reached a Sales Navigator route. This does not confirm an active subscription or trial."
+      "status": "Result content"
     },
     "status": "surface_reached",
     "subscription_status": "unknown",

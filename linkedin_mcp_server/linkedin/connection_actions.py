@@ -780,6 +780,7 @@ class ConnectionActions:
         *,
         note: str | None = None,
         dry_run: bool = False,
+        refuse_incoming: bool = False,
     ) -> dict[str, Any]:
         """Send a LinkedIn connection request or accept an incoming one.
 
@@ -795,6 +796,12 @@ class ConnectionActions:
         ``/preload/custom-invite/?vanityName=`` deeplink, which works
         whether the user-visible Connect button is in the action bar
         or buried under the More menu.
+
+        ``refuse_incoming`` is the campaign opt-in. The default still
+        accepts an incoming request. A campaign passes true and gets
+        ``incoming_request`` back without a click: accepting is
+        irreversible, and a campaign must not accept someone the banker
+        did not choose.
         """
         username = normalize_person_identifier(username)
         url = person_profile_url(username, "/")
@@ -835,6 +842,26 @@ class ConnectionActions:
             )
 
         if state == "incoming_request":
+            if refuse_incoming:
+                if dry_run:
+                    return {
+                        **_connection_result(
+                            url,
+                            "preview",
+                            "Incoming request would be left unanswered.",
+                            profile=page_text,
+                        ),
+                        "recipient": username,
+                        "connection_state": state,
+                        "note": None,
+                        "dry_run": True,
+                    }
+                return _connection_result(
+                    url,
+                    "incoming_request",
+                    "An incoming connection request was not accepted.",
+                    profile=page_text,
+                )
             if dry_run:
                 return {
                     **_connection_result(
