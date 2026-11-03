@@ -23,7 +23,6 @@ from linkedin_mcp_server.linkedin.connection_actions import ConnectionActions
 from linkedin_mcp_server.linkedin.content import PageContentReader
 from linkedin_mcp_server.linkedin.conversations import (
     ConversationReader,
-    _ThreadRefScan,
     _ThreadResolution,
 )
 from linkedin_mcp_server.linkedin.extractor import (
@@ -422,10 +421,9 @@ async def test_facade_get_conversation_forwards_its_username_and_index(mock_page
 
 async def test_facade_search_conversations_forwards_its_row_cap(mock_page):
     # `limit` reaches nothing the `search-conversations` trace records: the
-    # scripted row wait times out, so the cap never gets as far as the click
-    # loop it bounds. Replacing the forward with the default survives the
-    # traces, and every row the loop visits may be marked read, which is the
-    # side effect the cap exists to bound.
+    # scripted row wait times out, so the cap never gets as far as the preview
+    # read it bounds. Replacing the forward with the default survives the
+    # traces. The click scan must not run: selecting a row marks it read.
     extractor = LinkedInExtractor(cast(Page, mock_page))
 
     with (
@@ -441,14 +439,20 @@ async def test_facade_search_conversations_forwards_its_row_cap(mock_page):
         ),
         patch.object(
             ConversationReader,
+            "_read_conversation_previews",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as previews,
+        patch.object(
+            ConversationReader,
             "_extract_conversation_thread_refs",
             new_callable=AsyncMock,
-            return_value=_ThreadRefScan(refs=[]),
-        ) as refs,
+        ) as clicks,
     ):
         await extractor.search_conversations("engine", limit=7)
 
-    refs.assert_awaited_once_with(limit=7, context="search_results")
+    previews.assert_awaited_once_with(7)
+    clicks.assert_not_awaited()
 
 
 async def test_facade_read_person_keeps_refusing_the_self_alias_by_default(mock_page):

@@ -19,7 +19,6 @@ import pytest
 from linkedin_mcp_server.core.exceptions import (
     InvalidReferenceError,
     LinkedInOperationError,
-    RateLimitError,
 )
 from linkedin_mcp_server.linkedin.content import PageContentReader
 from linkedin_mcp_server.linkedin.conversations import (
@@ -29,6 +28,8 @@ from linkedin_mcp_server.linkedin.conversations import (
     _ThreadRefScan,
     _ThreadResolution,
     is_conversations_payload_response,
+    normalize_participant_name,
+    participant_name,
     strip_select_conversation_prefix,
     thread_categories,
 )
@@ -88,11 +89,10 @@ def _ref(url: str, text: str, context: str) -> Reference:
 
 
 class TestStripSelectConversationPrefix:
-    """The one locale-dependent comparison in this module, and its bounds.
+    """Known row-label verbs, and the miss that must not invent a name.
 
-    The table is a single en-US verb because the browser locale is forced to
-    en-US. The interesting half is the miss: an unrecognised locale has to fall
-    through with the aria-label intact rather than guess at a participant name.
+    en, pt-BR and de are the table. Another language comes back whole so the
+    lookup can quote it instead of reporting that the person was not found.
     """
 
     def test_strips_en_us_prefix(self):
@@ -107,16 +107,64 @@ class TestStripSelectConversationPrefix:
             == "jacki mcmahan"
         )
 
-    def test_returns_full_aria_when_prefix_absent(self):
-        """In a non-en-US locale the verb prefix won't match; return as-is so
-        downstream matching can endsWith / endswith on the participant name."""
+    def test_strips_pt_br_prefix(self):
+        assert (
+            strip_select_conversation_prefix("Selecionar conversa com Jacki McMahan")
+            == "Jacki McMahan"
+        )
+
+    def test_strips_german_verb_final_and_verb_initial(self):
+        assert (
+            strip_select_conversation_prefix("Unterhaltung mit Jacki McMahan auswählen")
+            == "Jacki McMahan"
+        )
         assert (
             strip_select_conversation_prefix("Konversation auswählen mit Jacki McMahan")
-            == "Konversation auswählen mit Jacki McMahan"
+            == "Jacki McMahan"
+        )
+
+    def test_returns_full_aria_when_no_known_format_matches(self):
+        assert (
+            strip_select_conversation_prefix(
+                "Choisir la conversation avec Jacki McMahan"
+            )
+            == "Choisir la conversation avec Jacki McMahan"
         )
 
     def test_empty_input(self):
         assert strip_select_conversation_prefix("") == ""
+
+
+class TestParticipantName:
+    """One normalization, visible text first, full-string equality."""
+
+    def test_visible_name_wins_over_a_shorter_pt_br_label(self):
+        name, language = participant_name(
+            visible="Ada Lovelace",
+            aria_label="Selecionar conversa com Ada",
+        )
+
+        assert (name, language) == ("Ada Lovelace", "visible")
+        assert normalize_participant_name(name or "") == normalize_participant_name(
+            "  ada   lovelace "
+        )
+        assert normalize_participant_name("Ada Lovelace") != normalize_participant_name(
+            "Ada Lovelace-Group"
+        )
+
+    def test_a_pt_br_label_is_the_name_when_it_is_also_the_visible_text(self):
+        name, language = participant_name(
+            visible="Selecionar conversa com Ada Lovelace",
+            aria_label="Selecionar conversa com Ada Lovelace",
+        )
+
+        assert (name, language) == ("Ada Lovelace", "pt-BR")
+
+    def test_an_unknown_label_is_not_a_name(self):
+        assert participant_name(
+            visible="Choisir la conversation avec Ada Lovelace",
+            aria_label="Choisir la conversation avec Ada Lovelace",
+        ) == (None, None)
 
 
 def _row(name: str, thread_id: str) -> dict[str, str]:
@@ -145,6 +193,7 @@ def _scan(
     first_index_gap: _IndexGap | None = None,
     start_thread_id: str | None = None,
     rows_available: bool = True,
+    unrecognized_labels: tuple[str, ...] = (),
 ) -> _ThreadRefScan:
     return _ThreadRefScan(
         refs=list(refs),
@@ -152,6 +201,7 @@ def _scan(
         first_index_gap=first_index_gap,
         start_thread_id=start_thread_id,
         rows_available=rows_available,
+        unrecognized_labels=unrecognized_labels,
     )
 
 
@@ -167,7 +217,6 @@ def _thread(thread_id: str) -> str:
     return f"https://www.linkedin.com/messaging/thread/{thread_id}/"
 
 
-MESSAGING = "https://www.linkedin.com/messaging/"
 COMPOSE = "https://www.linkedin.com/messaging/compose/"
 SEARCH_JACKI = "https://www.linkedin.com/messaging/?searchTerm=Jacki+McMahan"
 PROFILE_JACKI = "https://www.linkedin.com/in/jacki/"
@@ -176,10 +225,6 @@ JACKI = "Jacki McMahan"
 STARTED_ON_THREAD = (
     " The scan began on a thread path. An unchanged pre-click thread ID was"
     " not accepted as evidence for a row."
-)
-BYPASS = (
-    " Use get_conversation(thread_id=...) with a known thread id to bypass"
-    " row attribution."
 )
 REASON_NAVIGATION = (
     " that did not open a different thread within the poll budget. It may"
@@ -203,41 +248,29 @@ def _refusal(index: int, verified: int, reason: str, *, started: bool = False) -
     )
 
 
-def _stopped_message(row_name: str, *, started: bool = False) -> str:
-    return (
-        f'Click-derived conversation references stop before "{row_name}": '
-        "clicking that row did not open a different thread path within the "
-        "poll budget. No later rows were clicked by this scan."
-        + (STARTED_ON_THREAD if started else "")
-        + BYPASS
-    )
-
-
-ROWS_UNAVAILABLE = {
-    "error_type": "conversation_rows_unavailable",
-    "error_message": (
-        "No conversation rows attached within 10 s after requesting "
-        "https://www.linkedin.com/messaging/compose/, so no click-derived "
-        "conversation references were produced. This can mean an empty list or "
-        "a list that was unavailable. Inbox text and any anchor-derived "
-        "references were read from https://www.linkedin.com/messaging/." + BYPASS
-    ),
-}
-
-
 class TestExtractConversationThreadRefs:
-    async def test_the_name_filter_reaches_the_browser_click_loop(self, mock_page):
-        """The filter is applied in the browser, before any row is clicked.
-
-        Forwarding it is the whole of the read-marking containment on the
-        Python side: the loop skips a non-matching row without clicking it,
-        and a filter that never arrives clicks every row in the sidebar.
-        """
+    async def test_only_python_matched_rows_reach_the_browser_click_loop(
+        self, mock_page
+    ):
+        """Casefold equality runs before click positions are sent to the page."""
         reader = _reader(mock_page)
-        captured: dict[str, object] = {}
+        calls: list[tuple[str, dict | None]] = []
 
-        async def fake_evaluate(_js: str, arg: dict | None = None) -> dict:
-            captured["arg"] = arg
+        async def fake_evaluate(js: str, arg: dict | None = None) -> Any:
+            calls.append((js, arg))
+            if len(calls) == 1:
+                return [
+                    {
+                        "position": 0,
+                        "visible": "Jacki McMahan",
+                        "ariaLabel": "Selecionar conversa com Jacki",
+                    },
+                    {
+                        "position": 1,
+                        "visible": "Someone Else",
+                        "ariaLabel": "Select conversation with Someone Else",
+                    },
+                ]
             return _outcome()
 
         mock_page.evaluate = fake_evaluate
@@ -246,7 +279,41 @@ class TestExtractConversationThreadRefs:
             limit=50, context="inbox", name_filter="Jacki McMahan"
         )
 
-        assert captured["arg"] == {"limit": 50, "nameFilter": "Jacki McMahan"}
+        assert calls[0][1] == {"limit": 50}
+        assert calls[1][1] == {
+            "positions": [0],
+            "participants": {"0": "Jacki McMahan"},
+            "filtered": True,
+        }
+        assert "normalize_participant_name" not in calls[1][0]
+
+    async def test_unicode_casefold_happens_before_a_row_is_clicked(self, mock_page):
+        reader = _reader(mock_page)
+        calls: list[tuple[str, dict | None]] = []
+
+        async def evaluate(js: str, arg: dict | None = None) -> Any:
+            calls.append((js, arg))
+            if len(calls) == 1:
+                return [
+                    {
+                        "position": 0,
+                        "visible": "Straße",
+                        "ariaLabel": "Selecionar conversa com Straße",
+                    }
+                ]
+            return _outcome()
+
+        mock_page.evaluate = evaluate
+
+        await reader._extract_conversation_thread_refs(
+            limit=None, context="inbox", name_filter="STRASSE"
+        )
+
+        assert calls[1][1] == {
+            "positions": [0],
+            "participants": {"0": "Straße"},
+            "filtered": True,
+        }
 
     async def test_rows_that_never_attach_return_nothing_and_click_nothing(
         self, mock_page
@@ -314,11 +381,26 @@ class TestExtractConversationThreadRefs:
                 order.append("scroll")
                 scrolled += 1
                 return True
-            order.append("rows")
-            rows = [_row("Ada", "2-ada")]
-            if scrolled >= 2:
-                rows.append(_row("Grace", "2-grace"))
-            return _outcome(*rows)
+            if "positions" not in (arg or {}):
+                order.append("rows")
+                rows = [
+                    {
+                        "position": 0,
+                        "visible": "Ada",
+                        "ariaLabel": "Select conversation with Ada",
+                    }
+                ]
+                if scrolled >= 2:
+                    rows.append(
+                        {
+                            "position": 1,
+                            "visible": "Grace",
+                            "ariaLabel": "Select conversation with Grace",
+                        }
+                    )
+                return rows
+            order.append("click")
+            return _outcome(_row("Ada", "2-ada"), _row("Grace", "2-grace"))
 
         mock_page.wait_for_selector = wait_for_selector
         mock_page.evaluate = evaluate
@@ -327,7 +409,7 @@ class TestExtractConversationThreadRefs:
             limit=None, context="inbox", scroll_attempts=2
         )
 
-        assert order == ["wait", "scroll", "scroll", "rows"]
+        assert order == ["wait", "scroll", "scroll", "rows", "click"]
         assert [ref["url"] for ref in outcome.refs] == [
             "/messaging/thread/2-ada/",
             "/messaging/thread/2-grace/",
@@ -569,7 +651,18 @@ class TestResolveConversationThreadUrls:
         mock_page.wait_for_selector = AsyncMock(
             side_effect=[PlaywrightTimeoutError("no rows"), None]
         )
-        mock_page.evaluate = AsyncMock(return_value=_outcome(_row(JACKI, "2-found")))
+        mock_page.evaluate = AsyncMock(
+            side_effect=[
+                [
+                    {
+                        "position": 0,
+                        "visible": JACKI,
+                        "ariaLabel": f"Select conversation with {JACKI}",
+                    }
+                ],
+                _outcome(_row(JACKI, "2-found")),
+            ]
+        )
         nav_mock = AsyncMock()
         scroll = AsyncMock()
         with (
@@ -583,7 +676,7 @@ class TestResolveConversationThreadUrls:
             COMPOSE,
             SEARCH_JACKI,
         ]
-        mock_page.evaluate.assert_awaited_once()
+        assert mock_page.evaluate.await_count == 2
         scroll.assert_not_awaited()
         assert resolution == _ThreadResolution([_thread("2-found")])
 
@@ -754,18 +847,37 @@ class TestUsernameResolutionFailsClosed:
         assert str(opened.error) == _refusal(0, 0, reason)
         opened.root.assert_not_awaited()
 
-    async def test_a_python_name_rejection_is_a_barrier_not_a_filter(self, mock_page):
-        """The browser collapses whitespace and Python does not.
+    async def test_collapsed_whitespace_is_the_same_participant(self, mock_page):
+        """Heading and row share one normalization.
 
-        A double-spaced label the browser admitted fails the exact check here.
-        Dropping it and counting on would make the clean match after it
-        index 0, which is not the thread at position 0.
+        A double-spaced row the list rendered is the same name as the card
+        heading. Treating the spaces as a different person used to refuse the
+        index instead of opening the thread.
         """
         opened = await _open_by_username(
             mock_page,
             [
                 _scan(
                     _ref("/messaging/thread/2-spaced/", "Jacki  McMahan", "inbox"),
+                    _jacki("2-clean"),
+                )
+            ],
+        )
+
+        assert opened.error is None
+        assert opened.navigations[-1] == _thread("2-spaced")
+
+    async def test_a_different_name_is_a_barrier_not_a_skipped_row(self, mock_page):
+        """A row the browser admitted that is not this person ends the prefix.
+
+        Dropping it and counting on would make the real match after it
+        index 0, which is not the thread at position 0.
+        """
+        opened = await _open_by_username(
+            mock_page,
+            [
+                _scan(
+                    _ref("/messaging/thread/2-other/", "Pat Jones", "inbox"),
                     _jacki("2-clean"),
                 )
             ],
@@ -780,7 +892,7 @@ class TestUsernameResolutionFailsClosed:
             [
                 _scan(
                     _jacki("2-t0"),
-                    _ref("/messaging/thread/2-spaced/", "Jacki  McMahan", "inbox"),
+                    _ref("/messaging/thread/2-spaced/", "Pat Jones", "inbox"),
                     _jacki("2-t2"),
                     first_index_gap=_gap(JACKI, 3, 3),
                 )
@@ -813,7 +925,7 @@ class TestUsernameResolutionFailsClosed:
             (_scan(stopped_at=_stop(JACKI, 0)), REASON_NAVIGATION),
             (_scan(first_index_gap=_gap(JACKI, 0, 0)), REASON_MISSING_TARGET),
             (
-                _scan(_ref("/messaging/thread/2-x/", "Jacki  McMahan", "search")),
+                _scan(_ref("/messaging/thread/2-x/", "Pat Jones", "search")),
                 REASON_NAME_REJECTED,
             ),
         ],
@@ -846,6 +958,23 @@ class TestUsernameResolutionFailsClosed:
         assert str(opened.error) == "Could not find a conversation for jacki."
         assert opened.navigations == [PROFILE_JACKI, COMPOSE, SEARCH_JACKI]
 
+    async def test_an_unknown_label_format_is_not_could_not_find(self, mock_page):
+        """A Portuguese or other unread label must name itself.
+
+        Treating every unrecognized row as a non-match is what produced
+        "Could not find" for an inbox that was on screen the whole time.
+        """
+        label = "Choisir la conversation avec Jacki McMahan"
+        opened = await _open_by_username(
+            mock_page, [_scan(unrecognized_labels=(label,))]
+        )
+
+        assert opened.error is not None
+        assert "Could not find" not in str(opened.error)
+        assert label in str(opened.error)
+        assert "pt-BR" in str(opened.error)
+        assert opened.navigations == [PROFILE_JACKI, COMPOSE]
+
     async def test_a_complete_list_keeps_the_out_of_range_error(self, mock_page):
         opened = await _open_by_username(mock_page, [_scan(_jacki("2-t0"))], index=3)
 
@@ -858,7 +987,7 @@ class TestUsernameResolutionFailsClosed:
         [
             _scan(stopped_at=_stop(JACKI, 0)),
             _scan(first_index_gap=_gap(JACKI, 0, 0)),
-            _scan(_ref("/messaging/thread/2-x/", "Jacki  McMahan", "inbox")),
+            _scan(_ref("/messaging/thread/2-x/", "Pat Jones", "inbox")),
         ],
         ids=["navigation", "missing_target", "name_rejected"],
     )
@@ -962,7 +1091,7 @@ class TestGetInbox:
             result = await reader.get_inbox(limit=10)
 
         assert result == {
-            "url": "https://www.linkedin.com/messaging/",
+            "url": COMPOSE,
             "sections": {"inbox": "Conversation A\nConversation B"},
         }
 
@@ -996,18 +1125,16 @@ class TestGetInbox:
             result = await reader.get_inbox(limit=5)
 
         assert result == {
-            "url": "https://www.linkedin.com/messaging/",
+            "url": COMPOSE,
             "sections": {},
         }
 
-    async def test_text_is_read_on_the_inbox_and_rows_are_clicked_on_compose(
+    async def test_the_list_is_read_on_compose_and_rows_are_not_clicked(
         self, mock_page, session_boundaries
     ):
-        """Two pages, in this order, with the text read before leaving the first.
+        """Compose only. Bare ``/messaging/`` opens a thread and marks it read.
 
-        Reading after the compose navigation would return the compose page's
-        text under the inbox's URL; scanning bare ``/messaging/`` would click
-        the row it opened on its own, which cannot be verified.
+        The preview read is the last step, and it is not the click scan.
         """
         reader = _reader(mock_page)
         order: list[Any] = []
@@ -1027,79 +1154,58 @@ class TestGetInbox:
             order.append("root")
             return _root("Conversation A")
 
-        async def scan(**kwargs: Any) -> _ThreadRefScan:
-            order.append(("scan", kwargs))
-            return _scan()
+        async def previews(limit: int) -> list[dict[str, Any]]:
+            order.append(("previews", limit))
+            return [
+                {
+                    "participant": "Ada Lovelace",
+                    "text": "Ada Lovelace",
+                    "thread_id": None,
+                }
+            ]
+
+        click = AsyncMock(side_effect=AssertionError("inbox clicked a row"))
 
         with (
             patch.object(PageNavigator, "_navigate_to_page", nav),
             patch.object(reader, "_wait_for_main_text", text_wait),
             patch.object(reader, "_scroll_main_scrollable_region", scroll),
             patch.object(PageContentReader, "_extract_root_content", root),
-            patch.object(reader, "_extract_conversation_thread_refs", scan),
+            patch.object(reader, "_read_conversation_previews", previews),
+            patch.object(reader, "_extract_conversation_thread_refs", click),
         ):
             result = await reader.get_inbox(limit=20)
 
         assert order == [
-            ("navigate", MESSAGING),
+            ("navigate", COMPOSE),
             "rate_limit",
             "text_wait",
             "modal",
             ("scroll", 2),
             "root",
-            ("navigate", COMPOSE),
-            "rate_limit",
-            "modal",
-            ("scan", {"limit": 20, "context": "inbox", "scroll_attempts": 2}),
+            ("previews", 20),
         ]
-        assert result["url"] == MESSAGING
+        click.assert_not_awaited()
+        assert result["url"] == COMPOSE
         assert result["sections"] == {"inbox": "Conversation A"}
-
-    async def test_includes_conversation_thread_refs(self, mock_page):
-        """Click-captured thread refs lead, anchor-derived ones follow."""
-        reader = _reader(mock_page)
-        thread_refs = [
-            _ref("/messaging/thread/2-abc123/", "Tony Chan", "inbox"),
-            _ref("/messaging/thread/2-def456/", "Paul Jasper", "inbox"),
+        assert result["previews"] == [
+            {"participant": "Ada Lovelace", "text": "Ada Lovelace", "thread_id": None}
         ]
-        with (
-            patch.object(PageNavigator, "_navigate_to_page", new_callable=AsyncMock),
-            patch.object(reader, "_wait_for_main_text", new_callable=AsyncMock),
-            patch.object(
-                reader, "_scroll_main_scrollable_region", new_callable=AsyncMock
-            ),
-            patch.object(
-                PageContentReader,
-                "_extract_root_content",
-                new_callable=AsyncMock,
-                return_value=_root("Tony Chan\nPaul Jasper"),
-            ),
-            patch.object(
-                reader,
-                "_extract_conversation_thread_refs",
-                new_callable=AsyncMock,
-                return_value=_scan(*thread_refs),
-            ),
-        ):
-            result = await reader.get_inbox(limit=10)
 
-        assert result["references"]["inbox"] == thread_refs
-        assert "section_errors" not in result
+    async def test_anchor_refs_survive_and_previews_do_not_invent_a_thread_id(
+        self, mock_page
+    ):
+        """A link already on the page is a reference. A row without one is null.
 
-    async def test_click_captured_duplicate_keeps_its_richer_metadata(self, mock_page):
-        """The first duplicate wins, so the click-captured ref must lead.
-
-        Root anchors can expose the same URL with less or different metadata.
-        Reversing the merge order would silently replace the participant name
-        and inbox context captured from the conversation row.
+        Clicking the row to discover the id would mark it read, so the preview
+        keeps thread_id null instead.
         """
         reader = _reader(mock_page)
-        url = "/messaging/thread/2-abc123/"
-        click_ref = _ref(url, "Tony Chan", "inbox")
-        anchor_ref = {
-            "href": f"https://www.linkedin.com{url}",
-            "text": "Open chat",
+        anchor = {
+            "href": "https://www.linkedin.com/messaging/thread/2-anchor/",
+            "text": "Anchor only",
         }
+        click = AsyncMock(side_effect=AssertionError("inbox clicked a row"))
         with (
             patch.object(PageNavigator, "_navigate_to_page", new_callable=AsyncMock),
             patch.object(reader, "_wait_for_main_text", new_callable=AsyncMock),
@@ -1110,18 +1216,35 @@ class TestGetInbox:
                 PageContentReader,
                 "_extract_root_content",
                 new_callable=AsyncMock,
-                return_value=_root("Tony Chan", [anchor_ref]),
+                return_value=_root("Tony Chan", [anchor]),
             ),
             patch.object(
                 reader,
-                "_extract_conversation_thread_refs",
+                "_read_conversation_previews",
                 new_callable=AsyncMock,
-                return_value=_scan(click_ref),
+                return_value=[
+                    {
+                        "participant": "Tony Chan",
+                        "text": "Tony Chan\nhello",
+                        "thread_id": None,
+                    }
+                ],
             ),
+            patch.object(reader, "_extract_conversation_thread_refs", click),
         ):
             result = await reader.get_inbox(limit=10)
 
-        assert result["references"]["inbox"] == [click_ref]
+        click.assert_not_awaited()
+        assert result["references"]["inbox"] == [
+            {
+                "kind": "conversation",
+                "url": "/messaging/thread/2-anchor/",
+                "text": "Anchor only",
+                "context": "inbox",
+            }
+        ]
+        assert result["previews"][0]["thread_id"] is None
+        assert "section_errors" not in result
 
     @pytest.mark.parametrize(
         ("limit", "attempts"),
@@ -1132,14 +1255,13 @@ class TestGetInbox:
     ):
         """A floor of one, and one more attempt per ten rows asked for.
 
-        Both halves are invisible in the result: without the floor a
-        ``limit`` below ten scrolls not at all and reads whatever the first
-        screen held, and a raised budget clicks through rows nobody asked for.
-        The compose scan gets the same budget, spent after its rows attach.
+        Without the floor a ``limit`` below ten scrolls not at all. The preview
+        cap is the same limit, and the click scan is not how it is spent.
         """
         reader = _reader(mock_page)
         scroll_mock = AsyncMock()
-        refs_mock = AsyncMock(return_value=_scan())
+        previews = AsyncMock(return_value=[])
+        click = AsyncMock(side_effect=AssertionError("inbox clicked a row"))
         with (
             patch.object(PageNavigator, "_navigate_to_page", new_callable=AsyncMock),
             patch.object(reader, "_wait_for_main_text", new_callable=AsyncMock),
@@ -1150,23 +1272,18 @@ class TestGetInbox:
                 new_callable=AsyncMock,
                 return_value=_root("rows"),
             ),
-            patch.object(reader, "_extract_conversation_thread_refs", refs_mock),
+            patch.object(reader, "_read_conversation_previews", previews),
+            patch.object(reader, "_extract_conversation_thread_refs", click),
         ):
             await reader.get_inbox(limit=limit)
 
         scroll_mock.assert_awaited_once_with(
             position="bottom", attempts=attempts, pause_time=0.5
         )
-        refs_mock.assert_awaited_once_with(
-            limit=limit, context="inbox", scroll_attempts=attempts
-        )
+        previews.assert_awaited_once_with(limit)
+        click.assert_not_awaited()
 
-    async def _inbox(
-        self,
-        mock_page: Any,
-        scan: _ThreadRefScan,
-        root: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    async def test_a_preview_without_a_link_keeps_thread_id_null(self, mock_page):
         reader = _reader(mock_page)
         with (
             patch.object(PageNavigator, "_navigate_to_page", new_callable=AsyncMock),
@@ -1178,146 +1295,38 @@ class TestGetInbox:
                 PageContentReader,
                 "_extract_root_content",
                 new_callable=AsyncMock,
-                return_value=root if root is not None else _root("Inbox text"),
+                return_value=_root("Inbox text"),
             ),
             patch.object(
                 reader,
-                "_extract_conversation_thread_refs",
+                "_read_conversation_previews",
                 new_callable=AsyncMock,
-                return_value=scan,
+                return_value=[
+                    {"participant": "Ada Lovelace", "text": "Ada", "thread_id": None}
+                ],
             ),
         ):
-            return await reader.get_inbox(limit=10)
+            result = await reader.get_inbox(limit=10)
 
-    async def test_a_stopped_scan_reports_where_the_references_end(self, mock_page):
-        verified = _ref("/messaging/thread/2-ada/", "Ada Lovelace", "inbox")
-
-        result = await self._inbox(
-            mock_page, _scan(verified, stopped_at=_stop("Bob Stall", 1))
-        )
-
-        assert result == {
-            "url": MESSAGING,
-            "sections": {"inbox": "Inbox text"},
-            "references": {"inbox": [verified]},
-            "section_errors": {
-                "inbox": {
-                    "error_type": "thread_attribution_stopped",
-                    "error_message": _stopped_message("Bob Stall"),
-                }
-            },
-        }
-
-    async def test_a_stop_is_reported_without_text_and_for_an_unnamed_row(
-        self, mock_page
-    ):
-        """The diagnostic survives an empty page, and an empty label is a stop."""
-        result = await self._inbox(
-            mock_page, _scan(stopped_at=_StoppedRow("", 0)), root=_root("")
-        )
-
-        assert result == {
-            "url": MESSAGING,
-            "sections": {},
-            "section_errors": {
-                "inbox": {
-                    "error_type": "thread_attribution_stopped",
-                    "error_message": _stopped_message("(unnamed row)"),
-                }
-            },
-        }
-
-    @pytest.mark.parametrize("start", [None, "2-open"])
-    async def test_the_thread_start_sentence_appears_only_when_measured(
-        self, mock_page, start
-    ):
-        result = await self._inbox(
-            mock_page,
-            _scan(stopped_at=_stop("Bob Stall", 0), start_thread_id=start),
-        )
-
-        assert result.get("section_errors") == {
-            "inbox": {
-                "error_type": "thread_attribution_stopped",
-                "error_message": _stopped_message(
-                    "Bob Stall", started=start is not None
-                ),
-            }
-        }
-
-    async def test_rows_that_never_attach_are_reported_and_anchors_survive(
-        self, mock_page
-    ):
-        anchor = {
-            "href": "https://www.linkedin.com/messaging/thread/2-anchor/",
-            "text": "Anchor only",
-        }
-
-        result = await self._inbox(
-            mock_page,
-            _scan(rows_available=False),
-            root=_root("Inbox text", [anchor]),
-        )
-
-        assert result == {
-            "url": MESSAGING,
-            "sections": {"inbox": "Inbox text"},
-            "references": {
-                "inbox": [
-                    {
-                        "kind": "conversation",
-                        "url": "/messaging/thread/2-anchor/",
-                        "text": "Anchor only",
-                        "context": "inbox",
-                    }
-                ]
-            },
-            "section_errors": {"inbox": ROWS_UNAVAILABLE},
-        }
-
-    async def test_a_complete_scan_adds_no_error_mapping(self, mock_page):
-        result = await self._inbox(mock_page, _scan())
-
+        assert result["url"] == COMPOSE
+        assert result["previews"] == [
+            {"participant": "Ada Lovelace", "text": "Ada", "thread_id": None}
+        ]
         assert "section_errors" not in result
 
-    @pytest.mark.parametrize("failing", ["navigate", "rate_limit"])
-    async def test_a_failing_compose_leg_propagates_without_a_retry(
-        self, mock_page, session_boundaries, failing
-    ):
-        """No broad catch: the compose leg's failure is the call's failure.
-
-        Turning it into an empty scan would return the text with a diagnostic
-        that blames the row list for an authentication or rate-limit stop.
-        """
+    async def test_a_failed_navigation_propagates(self, mock_page):
         reader = _reader(mock_page)
-        nav = AsyncMock()
-        if failing == "navigate":
-            nav.side_effect = [None, LinkedInOperationError("navigation failed")]
-        else:
-            session_boundaries.check_rate_limit.side_effect = [
-                None,
-                RateLimitError("Rate limited"),
-            ]
-        scan = AsyncMock(return_value=_scan())
+        nav = AsyncMock(side_effect=LinkedInOperationError("navigation failed"))
+        previews = AsyncMock()
         with (
             patch.object(PageNavigator, "_navigate_to_page", nav),
-            patch.object(reader, "_wait_for_main_text", new_callable=AsyncMock),
-            patch.object(
-                reader, "_scroll_main_scrollable_region", new_callable=AsyncMock
-            ),
-            patch.object(
-                PageContentReader,
-                "_extract_root_content",
-                new_callable=AsyncMock,
-                return_value=_root("Inbox text"),
-            ),
-            patch.object(reader, "_extract_conversation_thread_refs", scan),
+            patch.object(reader, "_read_conversation_previews", previews),
         ):
-            with pytest.raises(LinkedInOperationError):
+            with pytest.raises(LinkedInOperationError, match="navigation failed"):
                 await reader.get_inbox(limit=10)
 
-        assert [call.args[0] for call in nav.await_args_list] == [MESSAGING, COMPOSE]
-        scan.assert_not_awaited()
+        assert [call.args[0] for call in nav.await_args_list] == [COMPOSE]
+        previews.assert_not_awaited()
 
 
 class TestGetConversation:
@@ -1601,32 +1610,21 @@ class TestSearchConversations:
 
         assert "Result 1" in result["sections"]["search_results"]
         # Search must be driven by the searchTerm URL parameter, not by typing
-        # into the searchbox -- the URL form is reliable across SPA mounts and
-        # preserves the search filter across click-to-capture navigations.
+        # into the searchbox.
         nav_mock.assert_awaited_once_with(
             "https://www.linkedin.com/messaging/?searchTerm=hello+world"
         )
 
-    async def test_click_captured_search_refs_lead_anchor_refs(self, mock_page):
-        """Search keeps click order and its metadata ahead of root anchors.
-
-        The duplicate carries an equally rich but conflicting anchor label, so
-        reversing ``conversation_refs + references`` changes both its metadata
-        and the complete result order instead of passing through a set compare.
-        """
+    async def test_search_returns_previews_without_clicking(self, mock_page):
+        """Anchors stay. Previews do not come from a click, so thread_id is null."""
         reader = _reader(mock_page)
-        first = _ref("/messaging/thread/2-abc/", "Tony Chan", "search_results")
-        duplicate = _ref("/messaging/thread/2-def/", "Paul Jasper", "search_results")
         anchors = [
-            {
-                "href": "https://www.linkedin.com/messaging/thread/2-def/",
-                "text": "Open thread",
-            },
             {
                 "href": "https://www.linkedin.com/messaging/thread/2-anchor/",
                 "text": "Anchor only",
             },
         ]
+        click = AsyncMock(side_effect=AssertionError("search clicked a row"))
         with (
             patch.object(PageNavigator, "_navigate_to_page", new_callable=AsyncMock),
             patch.object(reader, "_wait_for_main_text", new_callable=AsyncMock),
@@ -1634,27 +1632,30 @@ class TestSearchConversations:
                 PageContentReader,
                 "_extract_root_content",
                 new_callable=AsyncMock,
-                return_value=_root("Tony Chan\nPaul Jasper", anchors),
+                return_value=_root("Tony Chan", anchors),
             ),
             patch.object(
                 reader,
-                "_extract_conversation_thread_refs",
+                "_read_conversation_previews",
                 new_callable=AsyncMock,
-                return_value=_scan(first, duplicate),
-            ) as mock_refs,
+                return_value=[
+                    {"participant": "Tony Chan", "text": "Tony Chan", "thread_id": None}
+                ],
+            ) as previews,
+            patch.object(reader, "_extract_conversation_thread_refs", click),
         ):
-            result = await reader.search_conversations("Jacki")
+            result = await reader.search_conversations("Jacki", limit=7)
 
-        mock_refs.assert_awaited_once_with(limit=20, context="search_results")
+        click.assert_not_awaited()
+        previews.assert_awaited_once_with(7)
+        assert result["previews"][0]["thread_id"] is None
         assert result["references"]["search_results"] == [
-            first,
-            duplicate,
             {
                 "kind": "conversation",
                 "url": "/messaging/thread/2-anchor/",
                 "text": "Anchor only",
                 "context": "search result",
-            },
+            }
         ]
 
     async def test_an_empty_result_page_omits_the_optional_keys(self, mock_page):
@@ -1709,9 +1710,7 @@ class TestSearchConversations:
 
         scroll_mock.assert_not_awaited()
 
-    async def _search(
-        self, mock_page: Any, scan: _ThreadRefScan, text: str = "Result 1"
-    ) -> dict[str, Any]:
+    async def test_a_search_without_rows_adds_no_diagnostic(self, mock_page):
         reader = _reader(mock_page)
         with (
             patch.object(PageNavigator, "_navigate_to_page", new_callable=AsyncMock),
@@ -1720,54 +1719,22 @@ class TestSearchConversations:
                 PageContentReader,
                 "_extract_root_content",
                 new_callable=AsyncMock,
-                return_value=_root(text),
+                return_value=_root("Some result text"),
             ),
             patch.object(
                 reader,
-                "_extract_conversation_thread_refs",
+                "_read_conversation_previews",
                 new_callable=AsyncMock,
-                return_value=scan,
+                return_value=[],
             ),
         ):
-            return await reader.search_conversations("Jacki")
-
-    async def test_a_stopped_search_scan_is_reported_under_search_results(
-        self, mock_page
-    ):
-        verified = _ref("/messaging/thread/2-a/", "Ada", "search_results")
-
-        result = await self._search(
-            mock_page,
-            _scan(verified, stopped_at=_stop("Bob", 1), start_thread_id="2-a0"),
-        )
-
-        assert result == {
-            "url": mock_page.url,
-            "sections": {"search_results": "Result 1"},
-            "references": {"search_results": [verified]},
-            "section_errors": {
-                "search_results": {
-                    "error_type": "thread_attribution_stopped",
-                    "error_message": _stopped_message("Bob", started=True),
-                }
-            },
-        }
-
-    async def test_a_search_whose_rows_never_attach_adds_no_diagnostic(self, mock_page):
-        """Scoped on purpose: here the text page is the scan page.
-
-        Most searches without rows found nothing, and the inbox-only
-        diagnostic on each of them would be noise. That is a reporting choice,
-        not a claim that a timeout means no match.
-        """
-        result = await self._search(
-            mock_page, _scan(rows_available=False), text="Some result text"
-        )
+            result = await reader.search_conversations("Jacki")
 
         assert result == {
             "url": mock_page.url,
             "sections": {"search_results": "Some result text"},
         }
+        assert "section_errors" not in result
 
 
 class TestScrollMainScrollableRegion:

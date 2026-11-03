@@ -33,10 +33,12 @@ setups on the strength of not knowing, but the guard is one-shot per profile
 and nothing downstream can recover it.
 """
 
+import json
 import logging
 import os
 import re
 import subprocess
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import NamedTuple
 
@@ -377,6 +379,87 @@ def version_of(executable: str) -> BrowserBuild | None:
             finished.stdout.strip()[:200],
         )
     return build
+
+
+def installed_patchright_version() -> str | None:
+    """The installed patchright distribution, or None when it cannot be named."""
+    try:
+        return version("patchright")
+    except PackageNotFoundError:
+        return None
+
+
+def packaged_chromium_version() -> tuple[int, ...] | None:
+    """The Chromium version the installed patchright package says it will launch.
+
+    Read from the driver's ``browsers.json``, which is the revision that
+    package installs. This is not the binary on disk: a stale cache can lag
+    the package, and :func:`version_of` is what asks the binary. Reading the
+    manifest does not start a browser, so it still answers on Windows, where
+    ``--version`` would.
+    """
+    try:
+        import patchright
+    except ImportError:
+        return None
+    manifest = (
+        Path(patchright.__file__).resolve().parent
+        / "driver"
+        / "package"
+        / "browsers.json"
+    )
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeError) as exc:
+        logger.debug("Could not read patchright browsers.json: %s", exc)
+        return None
+    browsers = payload.get("browsers") if isinstance(payload, dict) else None
+    if not isinstance(browsers, list):
+        return None
+    for browser in browsers:
+        if not isinstance(browser, dict) or browser.get("name") != "chromium":
+            continue
+        declared = browser.get("browserVersion")
+        if not isinstance(declared, str):
+            return None
+        return parse_version(declared)
+    return None
+
+
+def refuse_an_older_packaged_browser(profile_dir: Path) -> None:
+    """Raise if this patchright's Chromium is older than the profile's Last Version.
+
+    Used when the launch will open the packaged browser, not an operator's
+    ``CHROME_PATH``. A newer package is a normal migration. An older one is
+    the downgrade that drops the cookie store, and the error names the
+    installed patchright so the version to install is not a guess.
+
+    Fails open when the manifest cannot be read, for the same reason as
+    :func:`refuse_a_downgrade`: not knowing is not evidence, and the binary
+    check still runs where a version can be asked for.
+    """
+    written_by = profile_was_written_by(profile_dir)
+    if written_by is None:
+        return
+    declared = packaged_chromium_version()
+    if declared is None:
+        logger.warning(
+            "Could not read the Chromium version installed with patchright, "
+            "so this profile's recorded %s cannot be checked against the "
+            "package. If the session stops working after this, an older "
+            "browser may have opened a newer profile.",
+            _render(written_by),
+        )
+        return
+    if declared >= written_by:
+        return
+    package = installed_patchright_version() or "unknown"
+    raise BrowserDowngradeError(
+        profile_version=_render(written_by),
+        browser_version=_render(declared),
+        browser_product=f"patchright {package} Chrome for Testing",
+        profile_dir=profile_dir,
+    )
 
 
 def refuse_a_downgrade(profile_dir: Path, executable: str | None) -> None:

@@ -1276,16 +1276,15 @@ class TestWhatTheToolsPromise:
     """
 
     async def test_no_tool_claims_read_only_while_changing_state(self):
-        """The two messaging tools that read by clicking are the reason for this.
+        """Opening a conversation marks that thread read.
 
-        Resolving a conversation by username enumerates the inbox by visiting
-        rows, and LinkedIn marks a visited row as read. Both tools' own
-        docstrings say so, and both carried ``readOnlyHint`` anyway. An unread
-        message the user has not seen is state, and a replay that silently clears
-        it is not something a reader should do.
+        ``get_inbox`` and ``search_conversations`` only read the list, so they
+        may say they are read-only. ``get_conversation`` still opens one
+        thread. An unread message the user has not seen is state, and a replay
+        that silently clears it is not something a reader should do.
         """
         mcp = create_mcp_server()
-        marks_things_read = {"get_conversation", "search_conversations"}
+        marks_things_read = {"get_conversation"}
         claiming = set()
         for name in marks_things_read:
             tool = await mcp.get_tool(name)

@@ -61,9 +61,9 @@ Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https
 | `get_my_profile` | Read your own profile, with the same section selection as other profiles. |
 | `connect_with_person` | Preview with `dry_run=true`, or send a connection request with an optional note or accept an incoming one. |
 | `get_sidebar_profiles` | Find recommended profile links, including people you may know. |
-| `get_inbox` | List recent inbox conversations, with links to open individual threads. |
-| `get_conversation` | Read a conversation's messages using a LinkedIn username or thread ID. |
-| `search_conversations` | Search messages by keyword and return links to matching conversation threads. |
+| `get_inbox` | List recent inbox conversations as previews. Does not open threads, so it does not mark them read. `thread_id` is null until you open one. |
+| `get_conversation` | Read one conversation by username or thread ID. Opening it marks that thread read. |
+| `search_conversations` | Search messages by keyword and return previews. Does not open threads, so it does not mark them read. |
 | `archive_conversation` | Archive a conversation by thread ID; a repeat call reports it already archived. |
 | `send_message` | Preview the filled composer with `dry_run=true`, or send after confirmation; profile targets may open a new DM ([#483](https://github.com/stickerdaniel/linkedin-mcp-server/issues/483)). |
 

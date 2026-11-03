@@ -826,6 +826,39 @@ class TestWhatTheLaunchDoes:
 
         assert asked.call_args.args == ("/registry/chromium",)
 
+    async def test_a_managed_launch_refuses_an_older_patchright_package(self, tmp_path):
+        """The package's Chromium, named in the error, before the profile opens.
+
+        A binary mock that is newer must not hide an installed patchright whose
+        declared browser is behind ``Last Version``.
+        """
+        profile = _profile_last_opened_by(tmp_path, "156.0.8078.5")
+        recorder: dict = {}
+        manager = self._manager(profile)
+
+        with (
+            mock.patch(
+                "linkedin_mcp_server.browser_downgrade.packaged_chromium_version",
+                return_value=(153, 0, 8010, 12),
+            ),
+            mock.patch(
+                "linkedin_mcp_server.browser_downgrade.installed_patchright_version",
+                return_value="1.63.0",
+            ),
+            mock.patch(
+                "linkedin_mcp_server.browser_downgrade.version_of",
+                return_value=BrowserBuild("Chromium", (200, 0, 0, 0)),
+            ),
+        ):
+            with pytest.raises(
+                BrowserDowngradeError, match="patchright 1.63.0"
+            ) as raised:
+                await self._start_against(manager, recorder)
+
+        assert "options" not in recorder
+        assert "153.0.8010.12" in str(raised.value)
+        assert "156.0.8078.5" in str(raised.value)
+
 
 class TestWhichBinaryIsChecked:
     def test_an_explicit_path_wins(self, tmp_path):

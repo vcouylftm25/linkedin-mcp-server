@@ -30,7 +30,6 @@ from linkedin_mcp_server.linkedin.identifiers import (
 from linkedin_mcp_server.linkedin.link_metadata import (
     Reference,
     build_references,
-    dedupe_references,
 )
 from linkedin_mcp_server.linkedin.navigation import PageNavigator
 from linkedin_mcp_server.linkedin.profile_page import ProfilePageReader
@@ -44,19 +43,107 @@ from linkedin_mcp_server.linkedin.text import (
 
 logger = logging.getLogger(__name__)
 
-# Best-effort prefix strip for the en-US "Select conversation with " verb.
-# Browser locale is forced to en-US (see BrowserManager) so this normally
-# succeeds; the regex falls through silently for any other locale, in
-# which case the full aria-label flows into the ref's text field rather
-# than a stripped name.
-_SELECT_CONVERSATION_PREFIX_RE = re.compile(
-    r"^Select conversation with\s+", re.IGNORECASE
+# The verb in a conversation-row label is locale-dependent. The account
+# language is whatever the signed-in session stored; the browser context's
+# en-US locale does not decide it. These are the shapes measured for the
+# three languages this lookup accepts. Anything else is an unknown format
+# and must be reported as such, not treated as a miss.
+#
+# The name is the only captured group. An optional group lets a trailing
+# verb with no name stay a blank name ("Select conversation with ") rather
+# than an unknown sentence. German puts the name between the noun and
+# "auswählen"; English and Brazilian Portuguese are prefixes.
+_ROW_LABEL_FORMATS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("en", re.compile(r"^Select conversation with(?:\s+(.*))?$", re.IGNORECASE)),
+    ("pt-BR", re.compile(r"^Selecionar conversa com(?:\s+(.*))?$", re.IGNORECASE)),
+    ("de", re.compile(r"^Unterhaltung mit\s+(.+?)\s+auswählen$", re.IGNORECASE)),
+    ("de", re.compile(r"^Konversation mit\s+(.+?)\s+auswählen$", re.IGNORECASE)),
+    (
+        "de",
+        re.compile(r"^Konversation auswählen mit(?:\s+(.*))?$", re.IGNORECASE),
+    ),
+    (
+        "de",
+        re.compile(r"^Unterhaltung auswählen mit(?:\s+(.*))?$", re.IGNORECASE),
+    ),
 )
 
 
+def normalize_participant_name(value: str) -> str:
+    """Collapse whitespace and casefold, for full-string name equality.
+
+    Both the profile-card heading and the row's participant name pass through
+    this and nothing else. Equality is of the whole string, so "Ada Lovelace"
+    does not select "Ada Lovelace-Group".
+    """
+    return re.sub(r"\s+", " ", value).strip().casefold()
+
+
+def _collapse_whitespace(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _name_from_label(value: str) -> tuple[str, str] | None:
+    """The participant a known row label names, and that label's language."""
+    text = _collapse_whitespace(value)
+    if not text:
+        return None
+    for language, pattern in _ROW_LABEL_FORMATS:
+        match = pattern.fullmatch(text)
+        if match is None:
+            continue
+        captured = match.group(1)
+        return _collapse_whitespace(captured or ""), language
+    return None
+
+
+def participant_name(*, visible: str, aria_label: str) -> tuple[str | None, str | None]:
+    """The row's participant name, preferring its visible text over the label.
+
+    Returns ``(name, language)``. ``language`` is a table key, ``"visible"``
+    when the row shows a name that is not the aria-label sentence, or ``None``
+    when the label is not a known format and there is no distinct visible
+    name. A blank known label yields ``("", language)``. An unknown sentence
+    yields ``(None, None)`` so the caller can say which label it saw.
+    """
+    visible_text = _collapse_whitespace(visible)
+    label_text = _collapse_whitespace(aria_label)
+    if visible_text and visible_text.casefold() != label_text.casefold():
+        parsed = _name_from_label(visible_text)
+        if parsed is not None:
+            return parsed
+        return visible_text, "visible"
+    source = label_text or visible_text
+    if not source:
+        return "", None
+    parsed = _name_from_label(source)
+    if parsed is not None:
+        return parsed
+    return None, None
+
+
 def strip_select_conversation_prefix(aria_label: str) -> str:
-    """Drop the en-US selection verb from one conversation row's aria-label."""
-    return _SELECT_CONVERSATION_PREFIX_RE.sub("", aria_label).strip()
+    """Drop a known selection verb from one conversation row's aria-label.
+
+    An unrecognized label is returned unchanged, so a caller can still show
+    the sentence it did not understand.
+    """
+    parsed = _name_from_label(aria_label)
+    if parsed is None:
+        return aria_label.strip()
+    return parsed[0]
+
+
+def _unrecognized_label_message(username: str, label: str) -> str:
+    shown = label.strip() or "(empty label)"
+    return (
+        f"Could not read conversation rows for {username}: the label "
+        f"{shown!r} is not a recognized format. Known formats are en "
+        '("Select conversation with …"), pt-BR ("Selecionar conversa com …") '
+        'and de ("Unterhaltung mit … auswählen", "Konversation mit … auswählen", '
+        '"Unterhaltung auswählen mit …" or "Konversation auswählen mit …"). '
+        "The browser locale is not consulted."
+    )
 
 
 # Click scans start here, never on bare `/messaging/`: that page opens a
@@ -68,10 +155,6 @@ _COMPOSE_URL = "https://www.linkedin.com/messaging/compose/"
 _SCAN_STARTED_ON_THREAD = (
     " The scan began on a thread path. An unchanged pre-click thread ID was"
     " not accepted as evidence for a row."
-)
-_BYPASS_ROW_ATTRIBUTION = (
-    " Use get_conversation(thread_id=...) with a known thread id to bypass"
-    " row attribution."
 )
 
 
@@ -114,6 +197,7 @@ class _ThreadRefScan:
     first_index_gap: _IndexGap | None = None
     start_thread_id: str | None = None
     rows_available: bool = True
+    unrecognized_labels: tuple[str, ...] = ()
 
 
 _BarrierReason = Literal["navigation", "missing_target", "name_rejected"]
@@ -137,54 +221,7 @@ class _ThreadResolution:
     eligible_urls: list[str]
     barrier: _Barrier | None = None
     start_thread_id: str | None = None
-
-
-def _thread_attribution_stopped_error(scan: _ThreadRefScan) -> dict[str, str]:
-    """The ``section_errors`` entry for a click scan that stopped at a row."""
-    assert scan.stopped_at is not None
-    row_name = (
-        strip_select_conversation_prefix(scan.stopped_at.aria_label) or "(unnamed row)"
-    )
-    message = (
-        f'Click-derived conversation references stop before "{row_name}": '
-        "clicking that row did not open a different thread path within the "
-        "poll budget. No later rows were clicked by this scan."
-    )
-    if scan.start_thread_id is not None:
-        message += _SCAN_STARTED_ON_THREAD
-    return {
-        "error_type": "thread_attribution_stopped",
-        "error_message": message + _BYPASS_ROW_ATTRIBUTION,
-    }
-
-
-def _conversation_rows_unavailable_error() -> dict[str, str]:
-    """The ``section_errors`` entry for an inbox scan whose rows never attached.
-
-    Only `get_inbox` reports it: its text and its click scan come from two
-    different pages, so the text alone cannot show that the references are
-    missing. A timeout does not prove the list is empty.
-    """
-    return {
-        "error_type": "conversation_rows_unavailable",
-        "error_message": (
-            "No conversation rows attached within 10 s after requesting "
-            f"{_COMPOSE_URL}, so no click-derived conversation references were "
-            "produced. This can mean an empty list or a list that was "
-            "unavailable. Inbox text and any anchor-derived references were read "
-            "from https://www.linkedin.com/messaging/." + _BYPASS_ROW_ATTRIBUTION
-        ),
-    }
-
-
-def _listing_section_errors(
-    section: str, scan: _ThreadRefScan, *, report_unavailable_rows: bool
-) -> dict[str, dict[str, str]] | None:
-    if scan.stopped_at is not None:
-        return {section: _thread_attribution_stopped_error(scan)}
-    if report_unavailable_rows and not scan.rows_available:
-        return {section: _conversation_rows_unavailable_error()}
-    return None
+    unrecognized_labels: tuple[str, ...] = ()
 
 
 def _resolution_from_scan(display_name: str, scan: _ThreadRefScan) -> _ThreadResolution:
@@ -196,7 +233,7 @@ def _resolution_from_scan(display_name: str, scan: _ThreadRefScan) -> _ThreadRes
     renumbered into it, because a caller's ``index`` would then open a
     different conversation than the one at that position.
     """
-    target_name = display_name.strip().lower()
+    target_name = normalize_participant_name(display_name)
     gap, stop = scan.first_index_gap, scan.stopped_at
     reason: _BarrierReason | None = None
     candidates = len(scan.refs)
@@ -207,18 +244,21 @@ def _resolution_from_scan(display_name: str, scan: _ThreadRefScan) -> _ThreadRes
 
     eligible: list[str] = []
     for ref in scan.refs[:candidates]:
-        # name_filter already gated the clicks; this enforces exact equality
-        # Python-side. The browser collapses whitespace and this does not, so
-        # a row it admitted can still fail here, and that ends the prefix.
-        if (ref.get("text") or "").strip().lower() != target_name:
+        # The browser already skipped other people. This is the same
+        # normalization, so a spacing or case difference is not a new barrier.
+        # A genuinely different string still ends the prefix.
+        if normalize_participant_name(ref.get("text") or "") != target_name:
             return _ThreadResolution(
                 eligible,
                 _Barrier("name_rejected", len(eligible)),
                 scan.start_thread_id,
+                scan.unrecognized_labels,
             )
         eligible.append(f"https://www.linkedin.com{ref['url']}")
     barrier = None if reason is None else _Barrier(reason, len(eligible))
-    return _ThreadResolution(eligible, barrier, scan.start_thread_id)
+    return _ThreadResolution(
+        eligible, barrier, scan.start_thread_id, scan.unrecognized_labels
+    )
 
 
 _UNVERIFIED_REASONS: dict[_BarrierReason, str] = {
@@ -613,13 +653,12 @@ def _on_thread(url: str, thread_key: str) -> bool:
 class ConversationReader:
     """Own every workflow whose subject is a LinkedIn messaging thread.
 
-    The sidebar is the reason this reads the page directly rather than through
-    `SectionCapture`: LinkedIn renders conversation rows with no anchor href,
-    no thread-id attribute and no embedded URN, so a thread id can only be had
-    by clicking a row and reading the SPA URL the click lands on. That click
-    may mark the row read, which is the closest thing to a write anywhere in
-    this module and why every caller filters by participant name *before* a
-    row is ever clicked.
+    The sidebar is the reason a thread id is not on the list. LinkedIn renders
+    conversation rows with no anchor href, no thread-id attribute and no
+    embedded URN, so a thread id can only be had by clicking a row. That click
+    marks the row read. Listings therefore return the row text with
+    ``thread_id`` null. Only the conversation being opened is clicked, and a
+    username lookup clicks a row only after its visible name matches.
     """
 
     def __init__(
@@ -732,11 +771,15 @@ class ConversationReader:
         one stops the scan and no later row is clicked, because that click may
         still land and would then be credited to whichever row came next.
 
-        When ``name_filter`` is provided, every row's aria-label is still read
-        but only rows whose cleaned participant name equals it (case-insensitive)
-        are clicked; non-matching rows are skipped without clicking. Clicking a
-        row may mark it as read, so the filter keeps the read-marking side effect
-        scoped to the requested participant when resolving by username.
+        When ``name_filter`` is provided, every row is still read but only rows
+        whose participant name equals it are clicked. The name is the row's
+        visible text when that text is not the aria-label sentence, otherwise
+        the name inside a known en, pt-BR or de label. Both sides use
+        ``normalize_participant_name`` in Python before any click position is
+        sent back to the browser.
+        A label in no known format is not a miss: it is returned on
+        ``unrecognized_labels`` and is not clicked. Clicking a row may mark it
+        as read, so unrelated threads stay unclicked.
 
         ``scroll_attempts`` bottom scrolls run after the rows attach and before
         they are read, with the same heuristic as the inbox text page.
@@ -775,26 +818,67 @@ class ConversationReader:
                 position="bottom", attempts=scroll_attempts, pause_time=0.5
             )
 
-        # The Ember click handler lives on an inner div; the <li> and <label>
-        # don't trigger SPA navigation.  No role/aria attributes exist on the
-        # clickable element, so class-name selectors are unavoidable here.
-        # The aria-label value flows through unmodified — Python strips any
-        # known locale prefix to derive a clean participant name for refs.
-        outcome: dict[str, Any] = await self._session.run_on_linkedin(
-            """async ({ limit, nameFilter }) => {
+        # Read the labels without clicking, then compare the row name and
+        # profile heading through the same Python casefold normalization.
+        rows: Any = await self._session.run_on_linkedin(
+            """({ limit }) => {
                 const labels = Array.from(document.querySelectorAll(
                     'main li label[aria-label]'
                 ));
-                const cap = (limit == null)
-                    ? labels.length
-                    : Math.min(labels.length, limit);
-                // Normalize the optional participant filter by whitespace and
-                // case only. The en-US verb is stripped from row labels below,
-                // never from the filter, which is a display name. Only a
-                // matching row is clicked; clicking marks a row read, so
-                // unrelated threads must not be clicked.
-                const wanted = (nameFilter || '')
-                    .replace(/\\s+/g, ' ').trim().toLowerCase();
+                const cap = limit == null ? labels.length : Math.min(labels.length, limit);
+                const collapse = value => (value || '').replace(/\\s+/g, ' ').trim();
+                return labels.slice(0, cap).map((label, position) => {
+                    const row = label.closest('li') || label;
+                    const headings = Array.from(row.querySelectorAll('h1, h2, h3'))
+                        .map(node => collapse(node.innerText || node.textContent || ''))
+                        .filter(Boolean);
+                    const firstLine = ((row.innerText || '')
+                        .split('\\n')
+                        .map(line => line.trim())
+                        .filter(Boolean)[0]) || '';
+                    return {
+                        position,
+                        visible: headings.length === 1 ? headings[0] : firstLine,
+                        ariaLabel: label.getAttribute('aria-label') || '',
+                    };
+                });
+            }""",
+            {"limit": limit},
+        )
+        selected_positions: list[int] = []
+        participant_names: dict[int, str] = {}
+        unrecognized_labels: list[str] = []
+        if isinstance(rows, list):
+            for row in rows:
+                if not isinstance(row, dict) or not isinstance(
+                    row.get("position"), int
+                ):
+                    continue
+                name, _language = participant_name(
+                    visible=str(row.get("visible") or ""),
+                    aria_label=str(row.get("ariaLabel") or ""),
+                )
+                if name is None:
+                    label = str(row.get("ariaLabel") or "")
+                    if label:
+                        unrecognized_labels.append(label)
+                    continue
+                if name_filter is not None and normalize_participant_name(
+                    name
+                ) != normalize_participant_name(name_filter):
+                    continue
+                position = row["position"]
+                selected_positions.append(position)
+                participant_names[position] = name
+
+        # The Ember click handler lives on an inner div; neither the <li> nor
+        # <label> triggers SPA navigation, so the generic class substring is
+        # the only available target. Only Python-approved positions reach it.
+        outcome: dict[str, Any] = await self._session.run_on_linkedin(
+            """async ({ positions, participants, filtered }) => {
+                const labels = Array.from(document.querySelectorAll(
+                    'main li label[aria-label]'
+                ));
                 // Thread identity is the pathname's thread id and nothing
                 // else: a query, hash or trailing-slash change on the same
                 // thread is not a move, and a thread marker in a query is not
@@ -816,19 +900,16 @@ class ConversationReader:
                     firstIndexGap: null,
                     startThreadId: idOf(),
                 };
-                for (let position = 0; position < cap; position++) {
+                for (const position of positions) {
                     const label = labels[position];
+                    if (!label) continue;
                     const ariaLabel = label.getAttribute('aria-label') || '';
-                    const rowName = ariaLabel
-                        .replace(/^Select conversation with\\s+/i, '')
-                        .replace(/\\s+/g, ' ').trim().toLowerCase();
-                    if (wanted && rowName !== wanted) continue;
                     const clickTarget = label.closest('li')
                         ?.querySelector('div[class*="listitem__link"]');
                     if (!clickTarget) {
                         // Skipped, not clicked. A listing loses only this
                         // row; a username index cannot count past it.
-                        if (wanted && outcome.firstIndexGap === null) {
+                        if (filtered && outcome.firstIndexGap === null) {
                             outcome.firstIndexGap = {
                                 ariaLabel,
                                 position,
@@ -861,11 +942,21 @@ class ConversationReader:
                         outcome.stoppedAt = { ariaLabel, position };
                         break;
                     }
-                    outcome.rows.push({ ariaLabel, threadId: after });
+                    outcome.rows.push({
+                        ariaLabel,
+                        threadId: after,
+                        participant: participants[String(position)] || '',
+                    });
                 }
                 return outcome;
             }""",
-            {"limit": limit, "nameFilter": name_filter},
+            {
+                "positions": selected_positions,
+                "participants": {
+                    str(position): name for position, name in participant_names.items()
+                },
+                "filtered": name_filter is not None,
+            },
         )
         refs: list[Reference] = []
         for conv in outcome["rows"]:
@@ -874,7 +965,10 @@ class ConversationReader:
                 "url": f"/messaging/thread/{conv['threadId']}/",
                 "context": context,
             }
-            name = strip_select_conversation_prefix(conv.get("ariaLabel", ""))
+            if "participant" in conv and isinstance(conv.get("participant"), str):
+                name = conv["participant"].strip()
+            else:
+                name = strip_select_conversation_prefix(conv.get("ariaLabel", ""))
             if name:
                 ref["text"] = name
             refs.append(ref)
@@ -893,6 +987,7 @@ class ConversationReader:
                 else _IndexGap(gap["ariaLabel"], gap["position"], gap["precededBy"])
             ),
             start_thread_id=outcome["startThreadId"],
+            unrecognized_labels=tuple(unrecognized_labels),
         )
 
     async def _resolve_conversation_thread_urls(
@@ -904,22 +999,22 @@ class ConversationReader:
         because LinkedIn renders the messaging sidebar with no anchor hrefs, no
         data-thread attributes, and no embedded URNs — clicking each row and
         reading the resulting SPA URL is the only available extraction path.
-        The compose page is the scan destination because, in the dated
-        observation, it listed the inbox rows without opening a thread, while
-        bare `/messaging/` opened one. It is not guaranteed never to open a
-        thread; each row is still judged by its own click. The inbox list is
+        The compose page is the scan destination because the dated observation
+        found it listed inbox rows without opening a thread; bare
+        `/messaging/` opened one. Each row is still judged by its own click.
+        The inbox list is
         used before `?searchTerm=` because LinkedIn's messaging search
         frequently returns "We didn't find anything" for a participant whose
         thread is plainly present in the inbox (issue #434). ``name_filter`` is
         passed to the enumerator so only matching rows are clicked; clicking a
         row may mark it read, so unrelated threads stay untouched.
 
-        Matches by case-insensitive equality on the cleaned participant name
-        derived from the row's aria-label, which tolerates duplicate threads
-        with the same participant. Browser locale is forced to en-US so the
-        verb prefix strips reliably; in any other locale the comparison fails
-        cleanly with "Could not find a conversation" rather than returning
-        a wrong-thread match.
+        Matches by ``normalize_participant_name`` on the row's visible
+        participant name, or on the name inside a known en, pt-BR or de
+        aria-label when the visible text is that sentence. Duplicate threads
+        for one person stay in sidebar order. A label in no known format is
+        not "Could not find": the scan keeps the sentence and the opener
+        reports the format. The browser's en-US locale is not an input.
 
         The search runs only when the inbox scan observed no matching row and
         hit no barrier, for instance when the rows never attached or the
@@ -950,6 +1045,10 @@ class ConversationReader:
         # barrier could substitute a same-name thread for the position the
         # inbox could not verify.
         if inbox.eligible_urls or inbox.barrier is not None:
+            return inbox
+        # An unknown label format is the answer. Searching would only hide it
+        # behind "Could not find" when every row was unreadable.
+        if inbox.unrecognized_labels:
             return inbox
 
         # Fallback: LinkedIn's messaging search. Unreliable (often returns
@@ -1010,6 +1109,12 @@ class ConversationReader:
                     raise LinkedInOperationError(
                         _unverified_index_message(index, linkedin_username, resolution)
                     )
+                if resolution.unrecognized_labels and not thread_urls:
+                    raise LinkedInOperationError(
+                        _unrecognized_label_message(
+                            linkedin_username, resolution.unrecognized_labels[0]
+                        )
+                    )
                 if not thread_urls:
                     raise LinkedInOperationError(
                         f"Could not find a conversation for {linkedin_username}."
@@ -1025,9 +1130,107 @@ class ConversationReader:
                 "Messaging search results did not load in time."
             ) from exc
 
+    async def _read_conversation_previews(self, limit: int) -> list[dict[str, Any]]:
+        """Read up to ``limit`` row previews without selecting a row.
+
+        Selecting a row marks that thread read, so this never clicks. The
+        thread id is taken only from a thread link the row already has. The
+        messaging list has none, and the preview then carries ``thread_id``
+        null rather than a click-derived id. Seen receipts are not intercepted
+        and no Voyager request is issued.
+        """
+        try:
+            await self._session.page.wait_for_selector(
+                "main li label[aria-label]",
+                state="attached",
+                timeout=10000,
+            )
+        except PlaywrightTimeoutError:
+            return []
+
+        rows = await self._session.run_on_linkedin(
+            """({ limit }) => {
+                // conversationPreview: list text only. This program does not click.
+                const labels = Array.from(document.querySelectorAll(
+                    'main li label[aria-label]'
+                ));
+                const cap = Math.min(labels.length, limit);
+                const previews = [];
+                for (let index = 0; index < cap; index++) {
+                    const label = labels[index];
+                    const row = label.closest('li') || label;
+                    const headings = Array.from(row.querySelectorAll('h1, h2, h3'))
+                        .map(node => (node.innerText || node.textContent || '')
+                            .replace(/\\s+/g, ' ').trim())
+                        .filter(Boolean);
+                    const lines = (row.innerText || '')
+                        .split('\\n')
+                        .map(line => line.trim())
+                        .filter(Boolean);
+                    const visible = headings.length === 1 ? headings[0] : (lines[0] || '');
+                    let threadId = null;
+                    const anchor = row.querySelector('a[href*="/messaging/thread/"]');
+                    if (anchor) {
+                        try {
+                            const url = new URL(
+                                anchor.getAttribute('href') || anchor.href,
+                                location.href
+                            );
+                            const match = url.pathname.match(
+                                /^\\/messaging\\/thread\\/([^/]+)\\/?$/
+                            );
+                            if (match) {
+                                const id = decodeURIComponent(match[1]);
+                                if (id !== 'new') threadId = id;
+                            }
+                        } catch {
+                            threadId = null;
+                        }
+                    }
+                    previews.push({
+                        visible,
+                        ariaLabel: label.getAttribute('aria-label') || '',
+                        text: (row.innerText || '').trim(),
+                        threadId,
+                    });
+                }
+                return previews;
+            }""",
+            {"limit": limit},
+        )
+        previews: list[dict[str, Any]] = []
+        if not isinstance(rows, list):
+            return previews
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            name, _language = participant_name(
+                visible=str(row.get("visible") or ""),
+                aria_label=str(row.get("ariaLabel") or ""),
+            )
+            thread_id = row.get("threadId")
+            previews.append(
+                {
+                    "participant": name or None,
+                    "text": str(row.get("text") or ""),
+                    "thread_id": thread_id
+                    if isinstance(thread_id, str) and thread_id
+                    else None,
+                }
+            )
+        return previews
+
     async def get_inbox(self, limit: int = 20) -> dict[str, Any]:
-        """List recent conversations from the messaging inbox."""
-        url = "https://www.linkedin.com/messaging/"
+        """List recent conversations from the messaging inbox.
+
+        Read from the compose page. Bare ``/messaging/`` opens a thread on its
+        own, which marks that thread read, so the list is not loaded there.
+        Rows are not clicked. ``previews`` carries each row's visible text and
+        ``thread_id`` null unless the row already linked a thread. Open one
+        thread with ``get_conversation`` when its body is needed; that open is
+        the click, and it marks that thread read.
+        """
+        url = _COMPOSE_URL
         await self._navigator._navigate_to_page(url)
         await self._session.check_rate_limit()
         await self._wait_for_main_text(log_context="Messaging inbox")
@@ -1044,20 +1247,7 @@ class ConversationReader:
         references: list[Reference] = (
             build_references(raw_result["references"], "inbox") if cleaned else []
         )
-
-        # LinkedIn's conversation sidebar uses JS click handlers instead of
-        # <a> tags, so anchor extraction cannot capture thread IDs.  Click each
-        # conversation item and read the resulting SPA URL to build references.
-        # The text above stays from bare `/messaging/`; the clicks run on the
-        # compose page, never here, see _COMPOSE_URL.
-        await self._navigator._navigate_to_page(_COMPOSE_URL)
-        await self._session.check_rate_limit()
-        await self._session.dismiss_modal()
-        scan = await self._extract_conversation_thread_refs(
-            limit=limit, context="inbox", scroll_attempts=scrolls
-        )
-        if scan.refs:
-            references = dedupe_references(scan.refs + references)
+        previews = await self._read_conversation_previews(limit)
 
         result = self._single_section_result(
             url,
@@ -1065,11 +1255,8 @@ class ConversationReader:
             cleaned,
             references=references,
         )
-        section_errors = _listing_section_errors(
-            "inbox", scan, report_unavailable_rows=True
-        )
-        if section_errors:
-            result["section_errors"] = section_errors
+        if previews:
+            result["previews"] = previews
         return result
 
     async def get_conversation(
@@ -1086,12 +1273,10 @@ class ConversationReader:
         ``search_conversations`` to enumerate thread IDs first if disambiguation
         by index is impractical.
 
-        Side effect when looked up by username: resolution enumerates the
-        compose page's conversation list and click-visits only the row(s)
-        matching the participant's display name to capture the thread ID (no
-        anchor hrefs or thread-id attributes exist in the sidebar). Each visit
-        selects the row in the LinkedIn UI and may mark it as read. Pass
-        ``thread_id`` directly to skip this enumeration.
+        Side effect when looked up by username: resolution click-visits only
+        the row(s) whose visible name matches the profile card heading, to
+        capture the thread id. Each of those visits may mark that thread read.
+        Pass ``thread_id`` to open that one thread without scanning the list.
         """
         if not linkedin_username and not thread_id:
             raise InvalidReferenceError(
@@ -1141,13 +1326,12 @@ class ConversationReader:
 
         Uses LinkedIn's ``?searchTerm=`` URL parameter to drive the search
         rather than typing into the searchbox — the URL form is reliable
-        regardless of how soon the messaging SPA mounts its searchbox role,
-        and (critically) preserves the search filter across click-to-capture
-        navigations so per-thread refs can be enumerated.
+        regardless of how soon the messaging SPA mounts its searchbox role.
 
-        ``limit`` caps how many search-result rows the click-to-capture loop
-        visits. Each visit selects the row in LinkedIn's UI (and may mark it
-        as read), so a low cap is preferable for noisy queries.
+        ``limit`` caps how many result rows are returned as previews. Rows are
+        not clicked, so a search does not mark them read. ``thread_id`` on a
+        preview is null unless that row already linked a thread; open one
+        result with ``get_conversation`` to read its body.
         """
         search_url = (
             f"https://www.linkedin.com/messaging/?searchTerm={quote_plus(keywords)}"
@@ -1165,16 +1349,7 @@ class ConversationReader:
             if cleaned
             else []
         )
-
-        # Same click-to-capture path as get_inbox: LinkedIn's search sidebar
-        # has no anchor hrefs or thread-id attributes, so the only way to
-        # surface per-result thread IDs is to click each row and read the SPA
-        # URL. URL-driven search keeps the filter active across clicks.
-        scan = await self._extract_conversation_thread_refs(
-            limit=limit, context="search_results"
-        )
-        if scan.refs:
-            references = dedupe_references(scan.refs + references)
+        previews = await self._read_conversation_previews(limit)
 
         result = self._single_section_result(
             self._session.page.url,
@@ -1182,13 +1357,8 @@ class ConversationReader:
             cleaned,
             references=references,
         )
-        # A search whose rows never attached is not reported: here the text
-        # page is the scan page, and most such searches simply found nothing.
-        section_errors = _listing_section_errors(
-            "search_results", scan, report_unavailable_rows=False
-        )
-        if section_errors:
-            result["section_errors"] = section_errors
+        if previews:
+            result["previews"] = previews
         return result
 
     async def archive_conversation(self, thread_id: str) -> dict[str, Any]:

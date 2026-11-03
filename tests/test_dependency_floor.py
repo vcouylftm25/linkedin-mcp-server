@@ -31,6 +31,8 @@ from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
+from linkedin_mcp_server.browser_downgrade import packaged_chromium_version
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: The oldest patchright the server can actually open a browser with.
@@ -104,6 +106,30 @@ def _declared_floor() -> Version:
         assert bounds, f"patchright has no lower bound: {raw!r}"
         return max(bounds)
     raise AssertionError("patchright is not a declared dependency")
+
+
+def test_patchright_is_pinned_to_the_profile_browser() -> None:
+    """A range would let a resolver install an older browser on a newer profile.
+
+    ``==1.64.3`` is the pin this worktree opens saved sessions with. Its
+    packaged Chromium is what ``refuse_an_older_packaged_browser`` compares
+    with ``Last Version``.
+    """
+    pyproject = tomllib.loads(
+        (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    raw = next(
+        spec
+        for spec in pyproject["project"]["dependencies"]
+        if canonicalize_name(Requirement(spec).name) == "patchright"
+    )
+    assert raw == "patchright==1.64.3"
+    lock = (_REPO_ROOT / "uv.lock").read_text(encoding="utf-8")
+    assert 'name = "patchright"' in lock
+    assert 'version = "1.64.3"' in lock
+    declared = packaged_chromium_version()
+    assert declared is not None
+    assert declared >= (156, 0, 8078, 4)
 
 
 def test_the_floor_is_not_below_the_known_minimum() -> None:
