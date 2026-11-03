@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Protocol
 
-from linkedin_mcp_server.error_handler import CodedToolError, ErrorCode
+from linkedin_mcp_server.error_handler import CodedToolError
 from linkedin_mcp_server.profile_lease import (
     ProfileLeaseUnavailableError,
     _release_locked_fd,

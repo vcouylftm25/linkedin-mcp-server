@@ -197,6 +197,7 @@ def _windows_job_members(job: Any) -> tuple[int, ...]:
     return tuple(int(entry) for entry in members if entry is not None)
 
 
+@pytest.mark.browser_contract
 async def test_a_real_browser_launch_is_attributed_and_provably_drained(tmp_path):
     """The launch owns its processes, and the close proves they went."""
     executable = await _the_browser_this_launch_would_use(
@@ -505,6 +506,7 @@ def _assert_nothing_of_it_runs(manager: BrowserManager) -> None:
 
 
 @pytest.mark.parametrize("fault", ["chromium-killed", "page-closed", "page-crashed"])
+@pytest.mark.browser_contract
 async def test_a_browser_that_stopped_is_drained_and_started_again(
     tmp_path, isolate_profile_dir, monkeypatch, fault
 ):

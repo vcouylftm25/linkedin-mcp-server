@@ -132,15 +132,11 @@ _ALLOWED: dict[LeadState, frozenset[LeadState]] = {
     LeadState.MESSAGE_APPROVED: frozenset(
         {LeadState.MESSAGE_UNCONFIRMED, LeadState.SKIPPED}
     ),
-    LeadState.MESSAGE_UNCONFIRMED: frozenset(
-        {LeadState.MESSAGED, LeadState.SKIPPED}
-    ),
+    LeadState.MESSAGE_UNCONFIRMED: frozenset({LeadState.MESSAGED, LeadState.SKIPPED}),
     LeadState.MESSAGED: frozenset(
         {LeadState.REPLY_UNCONFIRMED, LeadState.REPLIED, LeadState.SKIPPED}
     ),
-    LeadState.REPLY_UNCONFIRMED: frozenset(
-        {LeadState.REPLIED, LeadState.MESSAGED}
-    ),
+    LeadState.REPLY_UNCONFIRMED: frozenset({LeadState.REPLIED, LeadState.MESSAGED}),
     LeadState.REPLIED: frozenset(),
     LeadState.SKIPPED: frozenset(),
     LeadState.WITHDRAWN: frozenset(),

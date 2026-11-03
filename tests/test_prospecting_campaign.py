@@ -67,9 +67,10 @@ def _approved(repository, campaign_id):
 
 
 def test_domain_refuses_noncanonical_or_secret_bearing_profile_url():
-    assert validate_lead_identity(
-        "alice-smith", "https://www.linkedin.com/in/alice-smith"
-    ) == "https://www.linkedin.com/in/alice-smith/"
+    assert (
+        validate_lead_identity("alice-smith", "https://www.linkedin.com/in/alice-smith")
+        == "https://www.linkedin.com/in/alice-smith/"
+    )
     with pytest.raises(InvalidLead):
         validate_lead_identity(
             "alice-smith", "https://www.linkedin.com/in/alice-smith/?sessionId=secret"
@@ -157,11 +158,13 @@ runner.tick(campaign_id, "invite", lambda _: os._exit(18), after_begin=lambda _:
     )
     assert killed.returncode == 17
     calls = []
+    runner = CampaignRunner(repo, limits, auth_root=tmp_path, clock=lambda: NOW)
     result = runner.tick(
         campaign.id,
         "invite",
-        lambda item: calls.append(item)
-        or ExecutionResult(LeadState.INVITED, "sent", True),
+        lambda item: (
+            calls.append(item) or ExecutionResult(LeadState.INVITED, "sent", True)
+        ),
     )
     assert calls == []
     assert result.attempted == 0

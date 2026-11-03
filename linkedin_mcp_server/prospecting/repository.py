@@ -181,9 +181,12 @@ class ProspectingRepository:
         company = raw.get("company")
         with closing(self._open()) as db, db:
             db.execute("BEGIN IMMEDIATE")
-            if db.execute(
-                "SELECT 1 FROM campaigns WHERE id=?", (campaign_id,)
-            ).fetchone() is None:
+            if (
+                db.execute(
+                    "SELECT 1 FROM campaigns WHERE id=?", (campaign_id,)
+                ).fetchone()
+                is None
+            ):
                 raise UnknownCampaign(f"Unknown campaign {campaign_id}.")
             db.execute(
                 """
@@ -326,9 +329,12 @@ class ProspectingRepository:
         prepared: list[tuple[sqlite3.Row, str, str | None, str | None]] = []
         with closing(self._open()) as db, db:
             db.execute("BEGIN IMMEDIATE")
-            if db.execute(
-                "SELECT 1 FROM campaigns WHERE id=?", (campaign_id,)
-            ).fetchone() is None:
+            if (
+                db.execute(
+                    "SELECT 1 FROM campaigns WHERE id=?", (campaign_id,)
+                ).fetchone()
+                is None
+            ):
                 raise UnknownCampaign(f"Unknown campaign {campaign_id}.")
             seen: set[str] = set()
             for raw in items:
@@ -431,9 +437,7 @@ class ProspectingRepository:
                     {"action": action, "item_hash": digest_item},
                     moment,
                 )
-                result_items.append(
-                    {"lead_vanity": vanity, "item_hash": digest_item}
-                )
+                result_items.append({"lead_vanity": vanity, "item_hash": digest_item})
         return {
             "campaign_id": campaign_id,
             "action": action,
@@ -657,9 +661,12 @@ class ProspectingRepository:
         until = pause_deadline(moment)
         with closing(self._open()) as db, db:
             db.execute("BEGIN IMMEDIATE")
-            if db.execute(
-                "SELECT 1 FROM campaigns WHERE id=?", (campaign_id,)
-            ).fetchone() is None:
+            if (
+                db.execute(
+                    "SELECT 1 FROM campaigns WHERE id=?", (campaign_id,)
+                ).fetchone()
+                is None
+            ):
                 raise UnknownCampaign(f"Unknown campaign {campaign_id}.")
             db.execute(
                 "UPDATE campaigns SET paused_until=?, pause_reason=? WHERE id=?",

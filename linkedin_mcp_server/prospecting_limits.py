@@ -10,6 +10,8 @@ they have their own daily budget because opening a profile is visible to the
 person.
 """
 
+from __future__ import annotations
+
 import os
 import sqlite3
 import uuid
@@ -105,9 +107,7 @@ class ProspectingLimits:
         daily_count = db.execute(
             "SELECT count(*) FROM writes WHERE day=? AND kind=?", (day, kind)
         ).fetchone()[0]
-        daily_count += self._unconfirmed_outside(
-            db, kind, "day<>?", (day,)
-        )
+        daily_count += self._unconfirmed_outside(db, kind, "day<>?", (day,))
         limit = self.limits[kind]
         if limit and daily_count >= limit:
             raise self._daily_error(kind, limit, now)
@@ -177,9 +177,7 @@ class ProspectingLimits:
                 )
             self.note_outcome_in(db, token, outcome)
 
-    def note_outcome_in(
-        self, db: sqlite3.Connection, token: str, outcome: str
-    ) -> None:
+    def note_outcome_in(self, db: sqlite3.Connection, token: str, outcome: str) -> None:
         if outcome not in _KEPT_OUTCOMES:
             raise CodedToolError(
                 f"Unknown prospecting outcome {outcome!r}.",

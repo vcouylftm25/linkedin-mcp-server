@@ -125,9 +125,7 @@ def register_prospecting_tools(
     )
     @tool_errors
     @_campaign_tool_errors
-    async def export_campaign(
-        campaign_id: str, format: str = "json"
-    ) -> dict[str, str]:
+    async def export_campaign(campaign_id: str, format: str = "json") -> dict[str, str]:
         """Export campaign rows as CSV or JSON text; no file is written."""
         store = _require_repository(repository)
         leads = store.list_leads(campaign_id)
