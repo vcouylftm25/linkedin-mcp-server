@@ -47,25 +47,68 @@ class ProfilePageReader:
         return resolution.target.profile_urn if resolution.target else None
 
     async def _read_profile_display_name(self) -> str | None:
-        """Read the visible profile name from the current person page."""
+        """Read the profile card's single heading, the same one messaging uses.
+
+        ``message_sender`` resolves a recipient from the top card's one visible
+        heading (``_PROFILE_MESSAGE_TARGET_JS``). Conversation lookup compares
+        that heading, not ``main h1``, whose innerText also carries a pronoun,
+        a badge, or a second line. The section rules are the same; a compose
+        link is not required, because this read only needs the name. Zero
+        headings or more than one is no name, rather than a guess at the first
+        line of the page.
+        """
         display_name = await self._session.run_on_linkedin(
             """() => {
-                const heading = document.querySelector('main h1');
-                const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
-                if (heading) {
-                    const headingText = normalize(
-                        heading.innerText || heading.textContent || ''
+                // profileCardHeading: the top card's one heading, not main h1.
+                const visible = element => {
+                    const visibility = element && getComputedStyle(element).visibility;
+                    return !!(
+                        element &&
+                        visibility !== 'hidden' &&
+                        visibility !== 'collapse' &&
+                        (element.offsetWidth || element.offsetHeight ||
+                            element.getClientRects().length)
                     );
-                    if (headingText) return headingText;
-                }
-
+                };
+                const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
                 const main = document.querySelector('main');
                 if (!main) return '';
-                const lines = (main.innerText || '')
-                    .split('\\n')
-                    .map(normalize)
-                    .filter(Boolean);
-                return lines[0] || '';
+                const pageProfile = /^\\/in\\/[^/]+\\/?$/.exec(window.location.pathname);
+                const personPaths = section => Array.from(
+                    section.querySelectorAll('a[href*="/in/"]')
+                ).filter(visible).map(anchor => {
+                    try {
+                        const url = new URL(anchor.getAttribute('href'), window.location.href);
+                        return url.hostname.toLowerCase().replace(/\\.$/, '') ===
+                            window.location.hostname.toLowerCase().replace(/\\.$/, '') &&
+                            /^\\/in\\/[^/]+\\/?$/.test(url.pathname)
+                            ? url.pathname.replace(/\\/?$/, '/') : null;
+                    } catch {
+                        return null;
+                    }
+                }).filter(Boolean);
+                const sections = Array.from(main.querySelectorAll('section')).filter(
+                    element =>
+                        visible(element) &&
+                        !element.closest('aside') &&
+                        !element.querySelector('section')
+                );
+                const currentPath = pageProfile
+                    ? window.location.pathname.replace(/\\/?$/, '/') : null;
+                const ownSections = currentPath
+                    ? sections.filter(element => personPaths(element).includes(currentPath))
+                    : [];
+                if (ownSections.length > 1) return '';
+                const section = currentPath
+                    ? ownSections[0] || sections.find(element =>
+                        !personPaths(element).some(path => path !== currentPath)
+                    )
+                    : sections[0];
+                if (!section) return '';
+                const headings = Array.from(section.querySelectorAll('h1, h2, h3'))
+                    .filter(visible);
+                if (headings.length !== 1) return '';
+                return normalize(headings[0].innerText || headings[0].textContent || '');
             }"""
         )
         if not isinstance(display_name, str):

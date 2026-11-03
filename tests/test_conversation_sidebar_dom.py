@@ -657,13 +657,7 @@ class TestTheClickLoopAgainstRealDom:
             }
         ]
 
-    async def test_the_aria_label_reaches_python_unmodified(self, dom_page):
-        """The locale strip is Python's job, so the browser must not do it.
-
-        A label in a locale the table does not carry has to arrive whole;
-        stripping it here would leave Python a name it cannot recognise as
-        unstripped.
-        """
+    async def test_a_known_german_label_is_the_participant_name(self, dom_page):
         await serve(
             dom_page,
             sidebar([("Konversation auswählen mit Ada Lovelace", "2-ada")]),
@@ -676,7 +670,77 @@ class TestTheClickLoopAgainstRealDom:
                 "kind": "conversation",
                 "url": "/messaging/thread/2-ada/",
                 "context": "inbox",
-                "text": "Konversation auswählen mit Ada Lovelace",
+                "text": "Ada Lovelace",
+            }
+        ]
+
+    async def test_an_unknown_label_is_not_clicked(self, dom_page):
+        """A language outside the table is reported, not guessed or opened."""
+        await serve(
+            dom_page,
+            sidebar([("Choisir la conversation avec Ada Lovelace", "2-ada")]),
+        )
+
+        outcome = await scan(dom_page, name_filter="Ada Lovelace")
+
+        assert await clicks(dom_page) == []
+        assert outcome.refs == []
+        assert outcome.unrecognized_labels == (
+            "Choisir la conversation avec Ada Lovelace",
+        )
+
+    async def test_a_pt_br_aria_label_matches_the_visible_name(self, dom_page):
+        """The heading is "Ada Lovelace"; the label only says "Ada".
+
+        Stripping the Portuguese verb and comparing that remainder misses the
+        row. The visible name is what the profile card is compared with.
+        """
+        await serve(
+            dom_page,
+            """<!DOCTYPE html>
+<html lang="pt-BR">
+  <body>
+    <p id="log"></p>
+    <main><ul>
+      <li><label aria-label="Selecionar conversa com Ada">
+        <div class="msg-conversation-listitem__link"
+          onclick="document.getElementById('log').textContent += ' 2-ada';
+            history.pushState({}, '', '/messaging/thread/2-ada/');">
+          <h3>Ada Lovelace</h3>
+        </div>
+      </label></li>
+      <li><label aria-label="Selecionar conversa com Grace Hopper">
+        <div class="msg-conversation-listitem__link"
+          onclick="document.getElementById('log').textContent += ' 2-grace';
+            history.pushState({}, '', '/messaging/thread/2-grace/');">
+          <h3>Grace Hopper</h3>
+        </div>
+      </label></li>
+    </ul></main>
+  </body>
+</html>
+""",
+        )
+
+        outcome = await scan(dom_page, name_filter="Ada Lovelace")
+
+        assert await clicks(dom_page) == ["2-ada"]
+        assert [ref["url"] for ref in outcome.refs] == ["/messaging/thread/2-ada/"]
+
+    async def test_a_preview_read_does_not_click_the_row(self, dom_page):
+        await serve(
+            dom_page,
+            sidebar([("Select conversation with Ada Lovelace", "2-ada")]),
+        )
+
+        previews = await _reader(dom_page)._read_conversation_previews(5)
+
+        assert await clicks(dom_page) == []
+        assert previews == [
+            {
+                "participant": "Ada Lovelace",
+                "text": "Select conversation with Ada Lovelace",
+                "thread_id": None,
             }
         ]
 

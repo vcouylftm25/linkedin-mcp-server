@@ -53,24 +53,21 @@ def register_messaging_tools(
         """
         List recent conversations from the LinkedIn messaging inbox.
 
-        The returned inbox text and result URL come from the ordinary messaging
-        inbox. Click-derived conversation references are collected separately
-        after requesting the compose page, which avoided inbox auto-opening on
-        the measured variant. A row contributes a click-derived reference only
-        after its click is followed by an observed different thread path. The
-        scan stops at its first unverifiable click. section_errors.inbox
-        reports that stop or unavailable scan rows; captured inbox text and
-        independently extracted anchors retain their normal handling. A known
-        thread_id can bypass row attribution when calling get_conversation.
+        Read from the compose page, which does not open a thread on its own.
+        Rows are not clicked, so other conversations are not marked read.
+        previews lists each visible row. thread_id is null when the row has no
+        thread link — the list does not carry one, and discovering it would
+        mean clicking the row. Open one thread with get_conversation; that
+        open is the click, and it marks that thread read. Anchor references,
+        when the page has any, keep their normal handling.
 
         Args:
             ctx: FastMCP context for progress reporting
-            limit: Maximum number of conversations to load (1-50, default 20)
+            limit: Maximum number of conversation previews to return (1-50, default 20)
 
         Returns:
-            Dict with url, sections (inbox -> raw text), optional references, and
-            optional section_errors (inbox -> why click-derived references are
-            incomplete).
+            Dict with url, sections (inbox -> raw list text), optional previews
+            (participant, text, thread_id or null), and optional references.
         """
         extractor = await get_ready_extractor(ctx, tool_name="get_inbox")
         logger.info("Fetching inbox (limit=%d)", limit)
@@ -107,21 +104,23 @@ def register_messaging_tools(
 
         Provide either linkedin_username or thread_id to identify the conversation.
 
-        When looked up by linkedin_username, resolution searches the messaging
-        inbox for the participant's display name and click-visits every
-        matching row to capture its thread ID — LinkedIn's sidebar has no
-        anchor hrefs or thread-id attributes, so this is the only available
-        path. Each visit selects the row in the LinkedIn UI and may mark it
-        as read. Pass thread_id directly to skip this enumeration.
+        When looked up by linkedin_username, resolution compares the profile
+        card heading with each row's visible participant name (or the name
+        inside a known en, pt-BR or de aria-label when the visible text is
+        that sentence). Names match after one normalization: collapsed
+        whitespace, casefold, full string. A label in no known format is an
+        error that quotes the label; it is not reported as a missing
+        conversation. The browser locale is not an input.
 
-        Username resolution scans matching rows from a requested compose page
-        first. Its indexable sequence ends before the first unresolved click,
-        missing matching click target, or admitted row that fails the existing
-        exact display-name check. An index outside that verified prefix is
-        refused with its reason. Search is a fallback only when the inbox scan
-        has no observed matching result and no such barrier; it never
-        substitutes a result after a stopped or gapped inbox scan. Pass a known
-        thread_id to bypass username/index resolution.
+        Matching rows are click-visited to capture thread IDs — the sidebar
+        has no anchor hrefs or thread-id attributes. Each visit may mark that
+        thread read. Pass thread_id to open one thread without scanning.
+
+        The indexable sequence ends before the first unresolved click, missing
+        matching click target, or admitted row that fails the display-name
+        check. An index outside that verified prefix is refused with its
+        reason. Search is a fallback only when the inbox scan has no observed
+        matching result and no such barrier.
 
         Args:
             ctx: FastMCP context for progress reporting
@@ -166,10 +165,9 @@ def register_messaging_tools(
     @mcp.tool(
         timeout=tool_timeout,
         title="Search Conversations",
-        # Same reason as `get_conversation`: enumerating result rows selects them
-        # in LinkedIn's UI, which can mark them read. Its own `limit` argument is
-        # documented in those terms.
-        annotations={"openWorldHint": True},
+        # Reads the result list and does not select rows, so it does not mark
+        # conversations read. Opening one result is get_conversation.
+        annotations={"readOnlyHint": True, "openWorldHint": True},
         tags={"messaging", "search"},
     )
     @tool_errors
@@ -181,25 +179,22 @@ def register_messaging_tools(
         """
         Search messages by keyword.
 
-        Click-derived references require an observed different thread path
-        after each row click. The first unverifiable click stops further row
-        clicks and is reported in section_errors.search_results. Already-read
-        text and independently extracted anchors retain their normal handling.
-        A result without that diagnostic does not guarantee that every
-        conversation was enumerated.
+        Rows are not clicked, so matches are not marked read. previews lists
+        each visible result. thread_id is null when the row has no thread
+        link; the list does not carry one, and reading it would select the
+        row. Open one result with get_conversation. Anchor references, when
+        the page has any, keep their normal handling.
 
         Args:
             keywords: Search keywords to filter conversations
             ctx: FastMCP context for progress reporting
-            limit: Maximum number of search-result rows to enumerate as
-                conversation references (1-50, default 20). Each enumeration
-                selects the row in LinkedIn's UI and may mark it as read, so
-                a low cap is preferable for noisy queries.
+            limit: Maximum number of search-result previews to return (1-50,
+                default 20).
 
         Returns:
             Dict with url, sections (search_results -> raw text), optional
-            references, and optional section_errors (search_results -> where
-            click-derived references stopped).
+            previews (participant, text, thread_id or null), and optional
+            references.
         """
         extractor = await get_ready_extractor(ctx, tool_name="search_conversations")
         logger.info("Searching conversations: keywords='%s', limit=%d", keywords, limit)

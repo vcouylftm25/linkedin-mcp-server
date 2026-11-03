@@ -23,7 +23,10 @@ from linkedin_mcp_server.common_utils import (
     secure_write_text,
 )
 
-from linkedin_mcp_server.browser_downgrade import refuse_a_downgrade
+from linkedin_mcp_server.browser_downgrade import (
+    refuse_a_downgrade,
+    refuse_an_older_packaged_browser,
+)
 from linkedin_mcp_server.exceptions import (
     BrowserDowngradeError,
     BrowserShutdownUnconfirmedError,
@@ -387,6 +390,14 @@ class BrowserManager:
             # profile exactly as it was found, which is the whole point of
             # refusing. Off the event loop: asking a binary for its version
             # spawns a process and waits ~35 ms for it.
+            # The package's declared Chromium, before the binary. A custom
+            # executable is the operator's browser, and the manifest must not
+            # refuse it. The binary check below still runs for both.
+            if not self.launch_options.get("executable_path"):
+                await asyncio.to_thread(
+                    refuse_an_older_packaged_browser,
+                    Path(self.user_data_dir),
+                )
             await asyncio.to_thread(
                 refuse_a_downgrade,
                 Path(self.user_data_dir),

@@ -1182,30 +1182,30 @@ async def _archive_conversation_scenario(*, already: bool) -> dict[str, Any]:
     )
 
 
-ROW_CLICK_STOPPED_OUTCOME = {
-    "rows": [
-        {"ariaLabel": "Select conversation with Ada Lovelace", "threadId": "2-ada"}
-    ],
-    "stoppedAt": {"ariaLabel": "Select conversation with Bob Stall", "position": 1},
-    "firstIndexGap": None,
-    "startThreadId": None,
-}
+PREVIEW_ROWS = [
+    {
+        "visible": "Ada Lovelace",
+        "ariaLabel": "Select conversation with Ada Lovelace",
+        "text": "Ada Lovelace\nhello",
+        "threadId": None,
+    }
+]
 
 
 async def _conversation_row_resolution_scenario() -> dict[str, Any]:
-    """`get_inbox` whose compose rows attach and whose second click stalls.
+    """`get_inbox` reads compose previews and does not click a row.
 
-    The scripted page records the submitted row program without running it;
-    the browser-DOM suite is what executes it.
+    The scripted page records the submitted preview program without running
+    it; the browser-DOM suite is what executes it.
     """
-    name = "get_inbox__row_click_stopped"
+    name = "get_inbox__previews"
     recorder = TraceRecorder(name, _COMMON_ALLOWED)
     clock = FakeClock(recorder)
     page = _page(recorder)
-    page.script("evaluate:scroll_main_region", True, True)
+    page.script("evaluate:scroll_main_region", True)
     page.script("evaluate:root_content", _root("Conversation content"))
     page.script("wait_for_selector:conversation_rows", None)
-    page.script("evaluate:conversation_thread_refs", ROW_CLICK_STOPPED_OUTCOME)
+    page.script("evaluate:conversation_previews", PREVIEW_ROWS)
     extractor = _extractor(page)
     async with boundaries(recorder, clock):
         with recorder.context("get_inbox", "conversation"):

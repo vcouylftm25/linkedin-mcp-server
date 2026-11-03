@@ -345,7 +345,7 @@
     "annotations": {
       "openWorldHint": true
     },
-    "description": "Read a specific messaging conversation.\n\nProvide either linkedin_username or thread_id to identify the conversation.\n\nWhen looked up by linkedin_username, resolution searches the messaging\ninbox for the participant's display name and click-visits every\nmatching row to capture its thread ID — LinkedIn's sidebar has no\nanchor hrefs or thread-id attributes, so this is the only available\npath. Each visit selects the row in the LinkedIn UI and may mark it\nas read. Pass thread_id directly to skip this enumeration.\n\nUsername resolution scans matching rows from a requested compose page\nfirst. Its indexable sequence ends before the first unresolved click,\nmissing matching click target, or admitted row that fails the existing\nexact display-name check. An index outside that verified prefix is\nrefused with its reason. Search is a fallback only when the inbox scan\nhas no observed matching result and no such barrier; it never\nsubstitutes a result after a stopped or gapped inbox scan. Pass a known\nthread_id to bypass username/index resolution.",
+    "description": "Read a specific messaging conversation.\n\nProvide either linkedin_username or thread_id to identify the conversation.\n\nWhen looked up by linkedin_username, resolution compares the profile\ncard heading with each row's visible participant name (or the name\ninside a known en, pt-BR or de aria-label when the visible text is\nthat sentence). Names match after one normalization: collapsed\nwhitespace, casefold, full string. A label in no known format is an\nerror that quotes the label; it is not reported as a missing\nconversation. The browser locale is not an input.\n\nMatching rows are click-visited to capture thread IDs — the sidebar\nhas no anchor hrefs or thread-id attributes. Each visit may mark that\nthread read. Pass thread_id to open one thread without scanning.\n\nThe indexable sequence ends before the first unresolved click, missing\nmatching click target, or admitted row that fails the display-name\ncheck. An index outside that verified prefix is refused with its\nreason. Search is a fallback only when the inbox scan has no observed\nmatching result and no such barrier.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -469,13 +469,13 @@
       "openWorldHint": true,
       "readOnlyHint": true
     },
-    "description": "List recent conversations from the LinkedIn messaging inbox.\n\nThe returned inbox text and result URL come from the ordinary messaging\ninbox. Click-derived conversation references are collected separately\nafter requesting the compose page, which avoided inbox auto-opening on\nthe measured variant. A row contributes a click-derived reference only\nafter its click is followed by an observed different thread path. The\nscan stops at its first unverifiable click. section_errors.inbox\nreports that stop or unavailable scan rows; captured inbox text and\nindependently extracted anchors retain their normal handling. A known\nthread_id can bypass row attribution when calling get_conversation.",
+    "description": "List recent conversations from the LinkedIn messaging inbox.\n\nRead from the compose page, which does not open a thread on its own.\nRows are not clicked, so other conversations are not marked read.\npreviews lists each visible row. thread_id is null when the row has no\nthread link — the list does not carry one, and discovering it would\nmean clicking the row. Open one thread with get_conversation; that\nopen is the click, and it marks that thread read. Anchor references,\nwhen the page has any, keep their normal handling.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "limit": {
           "default": 20,
-          "description": "Maximum number of conversations to load (1-50, default 20)",
+          "description": "Maximum number of conversation previews to return (1-50, default 20)",
           "maximum": 50,
           "minimum": 1,
           "type": "integer"
@@ -958,9 +958,10 @@
       }
     },
     "annotations": {
-      "openWorldHint": true
+      "openWorldHint": true,
+      "readOnlyHint": true
     },
-    "description": "Search messages by keyword.\n\nClick-derived references require an observed different thread path\nafter each row click. The first unverifiable click stops further row\nclicks and is reported in section_errors.search_results. Already-read\ntext and independently extracted anchors retain their normal handling.\nA result without that diagnostic does not guarantee that every\nconversation was enumerated.",
+    "description": "Search messages by keyword.\n\nRows are not clicked, so matches are not marked read. previews lists\neach visible result. thread_id is null when the row has no thread\nlink; the list does not carry one, and reading it would select the\nrow. Open one result with get_conversation. Anchor references, when\nthe page has any, keep their normal handling.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -970,7 +971,7 @@
         },
         "limit": {
           "default": 20,
-          "description": "Maximum number of search-result rows to enumerate as\nconversation references (1-50, default 20). Each enumeration\nselects the row in LinkedIn's UI and may mark it as read, so\na low cap is preferable for noisy queries.",
+          "description": "Maximum number of search-result previews to return (1-50,\ndefault 20).",
           "maximum": 50,
           "minimum": 1,
           "type": "integer"

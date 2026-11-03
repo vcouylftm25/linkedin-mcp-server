@@ -16,7 +16,7 @@
     {
       "call": "get_inbox",
       "extra": {
-        "target_url": "https://www.linkedin.com/messaging/",
+        "target_url": "https://www.linkedin.com/messaging/compose/",
         "wait_until": "domcontentloaded"
       },
       "kind": "boundary.trace",
@@ -26,15 +26,15 @@
     {
       "call": "get_inbox",
       "kind": "navigate",
-      "landed_url": "https://www.linkedin.com/messaging/",
-      "requested_url": "https://www.linkedin.com/messaging/",
+      "landed_url": "https://www.linkedin.com/messaging/compose/",
+      "requested_url": "https://www.linkedin.com/messaging/compose/",
       "section": "conversation",
       "timeout_ms": 30000,
       "wait_until": "domcontentloaded"
     },
     {
       "call": "get_inbox",
-      "description": "goto https://www.linkedin.com/messaging/",
+      "description": "goto https://www.linkedin.com/messaging/compose/",
       "kind": "boundary.stabilize",
       "result": null,
       "section": "conversation"
@@ -42,7 +42,7 @@
     {
       "call": "get_inbox",
       "extra": {
-        "target_url": "https://www.linkedin.com/messaging/",
+        "target_url": "https://www.linkedin.com/messaging/compose/",
         "wait_until": "domcontentloaded"
       },
       "kind": "boundary.trace",
@@ -115,73 +115,6 @@
     },
     {
       "call": "get_inbox",
-      "callback_id": "callback-2",
-      "event": "framenavigated",
-      "kind": "listener.add",
-      "section": "conversation"
-    },
-    {
-      "call": "get_inbox",
-      "extra": {
-        "target_url": "https://www.linkedin.com/messaging/compose/",
-        "wait_until": "domcontentloaded"
-      },
-      "kind": "boundary.trace",
-      "label": "extractor-before-goto",
-      "section": "conversation"
-    },
-    {
-      "call": "get_inbox",
-      "kind": "navigate",
-      "landed_url": "https://www.linkedin.com/messaging/compose/",
-      "requested_url": "https://www.linkedin.com/messaging/compose/",
-      "section": "conversation",
-      "timeout_ms": 30000,
-      "wait_until": "domcontentloaded"
-    },
-    {
-      "call": "get_inbox",
-      "description": "goto https://www.linkedin.com/messaging/compose/",
-      "kind": "boundary.stabilize",
-      "result": null,
-      "section": "conversation"
-    },
-    {
-      "call": "get_inbox",
-      "extra": {
-        "target_url": "https://www.linkedin.com/messaging/compose/",
-        "wait_until": "domcontentloaded"
-      },
-      "kind": "boundary.trace",
-      "label": "extractor-after-goto",
-      "section": "conversation"
-    },
-    {
-      "call": "get_inbox",
-      "kind": "boundary.auth_quick",
-      "result": null,
-      "section": "conversation"
-    },
-    {
-      "call": "get_inbox",
-      "callback_id": "callback-2",
-      "event": "framenavigated",
-      "kind": "listener.remove",
-      "section": "conversation"
-    },
-    {
-      "call": "get_inbox",
-      "kind": "boundary.rate_limit",
-      "section": "conversation"
-    },
-    {
-      "call": "get_inbox",
-      "dismissed": false,
-      "kind": "boundary.modal",
-      "section": "conversation"
-    },
-    {
-      "call": "get_inbox",
       "kind": "wait_for_selector",
       "operation": "conversation_rows",
       "section": "conversation",
@@ -191,58 +124,31 @@
     },
     {
       "arg": {
-        "position": "bottom"
+        "limit": 10
       },
       "call": "get_inbox",
       "kind": "evaluate",
-      "operation": "scroll_main_region",
-      "program_digest": "4ae107c367fc",
-      "section": "conversation"
-    },
-    {
-      "call": "get_inbox",
-      "kind": "sleep",
-      "reason": "sleep",
-      "seconds": 0.5,
-      "section": "conversation"
-    },
-    {
-      "arg": {
-        "limit": 10,
-        "nameFilter": null
-      },
-      "call": "get_inbox",
-      "kind": "evaluate",
-      "operation": "conversation_thread_refs",
-      "program_digest": "9ed788195c04",
+      "operation": "conversation_previews",
+      "program_digest": "163482609b66",
       "section": "conversation"
     }
   ],
   "result": {
-    "references": {
-      "inbox": [
-        {
-          "context": "inbox",
-          "kind": "conversation",
-          "text": "Ada Lovelace",
-          "url": "/messaging/thread/2-ada/"
-        }
-      ]
-    },
-    "section_errors": {
-      "inbox": {
-        "error_message": "Click-derived conversation references stop before \"Bob Stall\": clicking that row did not open a different thread path within the poll budget. No later rows were clicked by this scan. Use get_conversation(thread_id=...) with a known thread id to bypass row attribution.",
-        "error_type": "thread_attribution_stopped"
+    "previews": [
+      {
+        "participant": "Ada Lovelace",
+        "text": "Ada Lovelace\nhello",
+        "thread_id": null
       }
-    },
+    ],
     "section_names": [
       "inbox"
     ],
     "sections": {
       "inbox": "Conversation content"
     },
-    "url": "https://www.linkedin.com/messaging/"
+    "url": "https://www.linkedin.com/messaging/compose/"
   },
-  "scenario": "get_inbox__row_click_stopped",
+  "scenario": "get_inbox__previews",
   "schema_version": 1
 }
