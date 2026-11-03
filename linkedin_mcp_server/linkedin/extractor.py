@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from patchright.async_api import Page
@@ -74,21 +75,46 @@ class LinkedInExtractor:
         )
         self._sales_navigator = SalesNavigatorReader(session, capture)
 
-    async def sales_nav_status(self) -> dict[str, Any]:
+    async def sales_nav_status(
+        self, *, charge: Callable[[str], object] | None = None
+    ) -> dict[str, Any]:
         """Check whether the signed-in browser reaches Sales Navigator."""
-        return await self._sales_navigator.status()
+        return await self._sales_navigator.status(charge=charge)
 
-    async def sales_nav_search_leads(self, search_url: str) -> dict[str, Any]:
-        """Read one page of Sales Navigator lead results."""
-        return await self._sales_navigator.search_leads(search_url)
+    async def sales_nav_search_leads(
+        self,
+        search_url: str,
+        *,
+        max_pages: int = 1,
+        charge: Callable[[str], object] | None = None,
+    ) -> dict[str, Any]:
+        """Read Sales Navigator lead results, one navigation per page."""
+        return await self._sales_navigator.search_leads(
+            search_url, max_pages=max_pages, charge=charge
+        )
 
-    async def sales_nav_search_accounts(self, search_url: str) -> dict[str, Any]:
-        """Read one page of Sales Navigator account results."""
-        return await self._sales_navigator.search_accounts(search_url)
+    async def sales_nav_search_accounts(
+        self,
+        search_url: str,
+        *,
+        max_pages: int = 1,
+        charge: Callable[[str], object] | None = None,
+    ) -> dict[str, Any]:
+        """Read Sales Navigator account results, one navigation per page."""
+        return await self._sales_navigator.search_accounts(
+            search_url, max_pages=max_pages, charge=charge
+        )
 
-    async def sales_nav_list_leads(self) -> dict[str, Any]:
-        """Read the first page of saved Sales Navigator leads."""
-        return await self._sales_navigator.list_leads()
+    async def sales_nav_list_leads(
+        self,
+        *,
+        max_pages: int = 1,
+        charge: Callable[[str], object] | None = None,
+    ) -> dict[str, Any]:
+        """Read saved Sales Navigator leads, one navigation per page."""
+        return await self._sales_navigator.list_leads(
+            max_pages=max_pages, charge=charge
+        )
 
     async def get_page_text(self) -> str:
         """Extract innerText from the main content area of the current page."""
@@ -163,8 +189,20 @@ class LinkedInExtractor:
         *,
         note: str | None = None,
         dry_run: bool = False,
+        refuse_incoming: bool = False,
     ) -> dict[str, Any]:
-        """Send a LinkedIn connection request or accept an incoming one."""
+        """Send a LinkedIn connection request or accept an incoming one.
+
+        ``refuse_incoming`` leaves an incoming request untouched. The
+        default accepts it.
+        """
+        if refuse_incoming:
+            return await self._connection.connect_with_person(
+                username,
+                note=note,
+                dry_run=dry_run,
+                refuse_incoming=True,
+            )
         return await self._connection.connect_with_person(
             username, note=note, dry_run=dry_run
         )

@@ -33,7 +33,7 @@ FACADE_PACKAGE_IMPORTERS = {
 PUBLIC_SIGNATURES = {
     "create_post": "(self, text: 'str', *, dry_run: 'bool' = False, image_path: 'str | None' = None, visibility: 'str' = 'current') -> 'dict[str, Any]'",
     "click_button_by_text": "(self, text: 'str', *, scope: 'str' = 'main', timeout: 'int' = 5000) -> 'bool'",
-    "connect_with_person": "(self, username: 'str', *, note: 'str | None' = None, dry_run: 'bool' = False) -> 'dict[str, Any]'",
+    "connect_with_person": "(self, username: 'str', *, note: 'str | None' = None, dry_run: 'bool' = False, refuse_incoming: 'bool' = False) -> 'dict[str, Any]'",
     "extract_feed": "(self, num_posts: 'int' = 10) -> 'ExtractedSection'",
     "extract_page": "(self, url: 'str', section_name: 'str', max_scrolls: 'int | None' = None) -> 'ExtractedSection'",
     "get_company_employees": "(self, company_name: 'str', keywords: 'str | None' = None) -> 'dict[str, Any]'",
@@ -55,10 +55,10 @@ PUBLIC_SIGNATURES = {
     "search_jobs": "(self, keywords: 'str', location: 'str | None' = None, max_pages: 'int' = 3, date_posted: 'str | None' = None, job_type: 'str | None' = None, experience_level: 'str | None' = None, work_type: 'str | None' = None, easy_apply: 'bool' = False, sort_by: 'str | None' = None, tool_timeout: 'float' = 180.0) -> 'dict[str, Any]'",
     "search_people": "(self, keywords: 'str', location: 'str | None' = None, network: 'list[str] | None' = None, current_company: 'str | None' = None) -> 'dict[str, Any]'",
     "search_posts": "(self, keywords: 'str', date_posted: 'str | None' = None, max_pages: 'int' = 3, content_type: 'str | None' = None) -> 'dict[str, Any]'",
-    "sales_nav_status": "(self) -> 'dict[str, Any]'",
-    "sales_nav_search_leads": "(self, search_url: 'str') -> 'dict[str, Any]'",
-    "sales_nav_search_accounts": "(self, search_url: 'str') -> 'dict[str, Any]'",
-    "sales_nav_list_leads": "(self) -> 'dict[str, Any]'",
+    "sales_nav_status": "(self, *, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'",
+    "sales_nav_search_leads": "(self, search_url: 'str', *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'",
+    "sales_nav_search_accounts": "(self, search_url: 'str', *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'",
+    "sales_nav_list_leads": "(self, *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'",
     "send_message": "(self, linkedin_username: 'str', message: 'str', *, confirm_send: 'bool', profile_urn: 'str | None' = None, dry_run: 'bool' = False) -> 'dict[str, Any]'",
 }
 
@@ -97,7 +97,7 @@ DELEGATES = {
 DELEGATE_CALLS = {
     "create_post": "self._post_publisher.create_post(text, dry_run=dry_run, image_path=image_path, visibility=visibility)",
     "click_button_by_text": "self._content.click_button_by_text(text, scope=scope, timeout=timeout)",
-    "connect_with_person": "self._connection.connect_with_person(username, note=note, dry_run=dry_run)",
+    "connect_with_person": "self._connection.connect_with_person(username, note=note, dry_run=dry_run, refuse_incoming=refuse_incoming)",
     "extract_feed": "self._feed.extract_feed(num_posts)",
     "extract_page": "self._capture.extract_page(url, section_name, max_scrolls)",
     "get_company_employees": "self._company.get_company_employees(company_name, keywords)",
@@ -119,10 +119,10 @@ DELEGATE_CALLS = {
     "search_jobs": "self._jobs.search_jobs(keywords, location, max_pages, date_posted, job_type, experience_level, work_type, easy_apply, sort_by, tool_timeout)",
     "search_people": "self._person.search_people(keywords, location=location, network=network, current_company=current_company)",
     "search_posts": "self._posts.search_posts(keywords, date_posted=date_posted, max_pages=max_pages, content_type=content_type)",
-    "sales_nav_status": "self._sales_navigator.status()",
-    "sales_nav_search_leads": "self._sales_navigator.search_leads(search_url)",
-    "sales_nav_search_accounts": "self._sales_navigator.search_accounts(search_url)",
-    "sales_nav_list_leads": "self._sales_navigator.list_leads()",
+    "sales_nav_status": "self._sales_navigator.status(charge=charge)",
+    "sales_nav_search_leads": "self._sales_navigator.search_leads(search_url, max_pages=max_pages, charge=charge)",
+    "sales_nav_search_accounts": "self._sales_navigator.search_accounts(search_url, max_pages=max_pages, charge=charge)",
+    "sales_nav_list_leads": "self._sales_navigator.list_leads(max_pages=max_pages, charge=charge)",
     "send_message": "self._message_sender.send_message(linkedin_username, message, confirm_send=confirm_send, profile_urn=profile_urn, dry_run=dry_run)",
 }
 

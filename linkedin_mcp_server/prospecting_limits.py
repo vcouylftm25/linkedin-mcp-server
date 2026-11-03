@@ -1,4 +1,4 @@
-"""Persistent, local daily caps for prospecting writes."""
+"""Persistent, local daily caps for prospecting writes and reads."""
 
 import os
 import sqlite3
@@ -9,6 +9,12 @@ from pathlib import Path
 
 from linkedin_mcp_server.error_handler import CodedToolError, ErrorCode
 
+# Sales Navigator page loads, counted apart from invites and messages.
+# Profile visits notify the person, so a read is still an action. 0 is
+# unlimited, same as the other caps. The kind string is the one
+# `SALES_NAV_NAVIGATION_KIND` charges; a test holds the two together.
+DEFAULT_SALES_NAV_DAILY_NAVIGATIONS = 40
+
 
 class ProspectingLimits:
     def __init__(
@@ -16,6 +22,8 @@ class ProspectingLimits:
         invite_limit: int = 20,
         message_limit: int = 40,
         state_dir: str | None = None,
+        *,
+        navigation_limit: int = DEFAULT_SALES_NAV_DAILY_NAVIGATIONS,
     ) -> None:
         root = (
             Path(state_dir).expanduser()
@@ -26,7 +34,11 @@ class ProspectingLimits:
             / "linkedin-mcp-server"
         )
         self.path = root / "prospecting.sqlite3"
-        self.limits = {"invite": invite_limit, "message": message_limit}
+        self.limits = {
+            "invite": invite_limit,
+            "message": message_limit,
+            "sales_nav": navigation_limit,
+        }
 
     def _open(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -108,5 +120,6 @@ class ProspectingLimits:
             "resets_at": reset.isoformat(),
             "invites": counts["invite"],
             "messages": counts["message"],
+            "sales_nav": counts["sales_nav"],
             "state_file": str(self.path),
         }

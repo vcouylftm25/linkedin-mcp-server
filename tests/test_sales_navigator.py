@@ -71,7 +71,11 @@ def test_rejects_foreign_malformed_or_wrong_type_search_urls(url, path):
 
 def _reader(landed_url: str, text: str = "Rendered Sales Navigator results"):
     page = SimpleNamespace(url=landed_url)
-    session = SimpleNamespace(page=page, delay=AsyncMock())
+    session = SimpleNamespace(
+        page=page,
+        delay=AsyncMock(),
+        run_on_linkedin=AsyncMock(return_value=[]),
+    )
     capture = SimpleNamespace(
         capture=AsyncMock(return_value=ExtractedSection(text=text, references=[]))
     )
@@ -94,10 +98,8 @@ async def test_status_reports_access_only_when_page_lands_on_sales_route():
     assert result["status"] == "surface_reached"
     assert result["subscription_status"] == "unknown"
     assert result["url"] == "https://www.linkedin.com/sales/home"
-    assert (
-        "does not confirm an active subscription or trial"
-        in result["sections"]["status"]
-    )
+    assert result["sections"]["status"] == "Rendered Sales Navigator results"
+    assert "does not confirm an active subscription or trial" in result["message"]
     assert capture.capture.await_args.args[:2] == (
         SALES_NAV_HOME_URL,
         "sales_nav_status",
@@ -107,14 +109,16 @@ async def test_status_reports_access_only_when_page_lands_on_sales_route():
 
 
 async def test_lead_search_reads_one_unscrolled_results_page():
-    reader, capture, session = _reader("https://www.linkedin.com/sales/search/people")
+    reader, capture, session = _reader(
+        "https://www.linkedin.com/sales/search/people?query=%28filters%3AList%28%29%29"
+    )
 
     result = await reader.search_leads(LEAD_SEARCH_URL)
 
     assert result["url"] == LEAD_SEARCH_URL
     assert result["sections"]["search_results"] == "Rendered Sales Navigator results"
     assert result["pagination"]["pages_fetched"] == 1
-    assert result["pagination"]["reason"] == "single_page"
+    assert result["pagination"]["reason"] == "complete"
     assert capture.capture.await_args.args[:2] == (LEAD_SEARCH_URL, "sales_nav_search")
     assert capture.capture.await_args.args[2].max_scrolls == 0
     assert MAX_RESULTS_PER_CALL == 15
@@ -144,6 +148,98 @@ async def test_saved_lead_list_is_a_single_read_only_capture():
     )
     assert capture.capture.await_args.args[2].max_scrolls == 0
     session.delay.assert_awaited_once_with(2.0)
+
+
+async def test_account_search_paginates_with_checked_page_and_charges_each_load():
+    page = SimpleNamespace(url="")
+    session = SimpleNamespace(page=page, delay=AsyncMock())
+
+    async def capture(url, _section, _plan):
+        page.url = url
+        page_number = int(url.split("page=")[-1]) if "page=" in url else 1
+        return ExtractedSection(
+            text=f"Page {page_number}",
+            references=[
+                {
+                    "kind": "sales_company",
+                    "url": f"/sales/company/{page_number}/",
+                    "context": "Sales Navigator search results",
+                }
+            ],
+        )
+
+    charge = []
+    capture_adapter = SimpleNamespace(capture=AsyncMock(side_effect=capture))
+    reader = SalesNavigatorReader(
+        cast(PageSession, session), cast(SectionCapture, capture_adapter)
+    )
+    result = await reader.search_accounts(
+        ACCOUNT_SEARCH_URL, max_pages=2, charge=charge.append
+    )
+
+    assert result["pagination"] == {
+        "pages_fetched": 2,
+        "next_offset": 3,
+        "reason": "max_pages",
+        "result_kind": "accounts",
+    }
+    assert result["sections"]["search_results"] == "Page 1\nPage 2"
+    assert charge == ["sales_nav", "sales_nav"]
+    assert [call.args[0] for call in capture_adapter.capture.await_args_list] == [
+        ACCOUNT_SEARCH_URL,
+        ACCOUNT_SEARCH_URL + "&page=2",
+    ]
+
+
+async def test_page_that_did_not_advance_is_excluded_and_returned_as_error():
+    reader, capture, _session = _reader(
+        "https://www.linkedin.com/sales/search/company?query=filters&page=1"
+    )
+    capture.capture.side_effect = [
+        ExtractedSection(
+            text="Page 1",
+            references=[
+                {
+                    "kind": "sales_company",
+                    "url": "/sales/company/1/",
+                    "context": "Sales Navigator search results",
+                }
+            ],
+        ),
+        ExtractedSection(
+            text="Repeated page",
+            references=[
+                {
+                    "kind": "sales_company",
+                    "url": "/sales/company/1/",
+                    "context": "Sales Navigator search results",
+                }
+            ],
+        ),
+    ]
+    # The mocked browser stayed on page 1 after the requested page 2 load.
+    result = await reader.search_accounts(
+        "https://www.linkedin.com/sales/search/company?query=filters&page=1",
+        max_pages=2,
+    )
+    assert result["pagination"]["pages_fetched"] == 1
+    assert result["pagination"]["next_offset"] == 2
+    assert result["pagination"]["reason"] == "page_not_advanced"
+    assert result["sections"]["search_results"] == "Page 1"
+    assert (
+        result["section_errors"]["search_results"]["error_type"]
+        == "pagination_stopped"
+    )
+
+
+async def test_filter_parameter_dropped_by_final_url_fails_closed():
+    reader, _capture, _session = _reader(
+        "https://www.linkedin.com/sales/search/people?sessionId=fresh"
+    )
+    with pytest.raises(CodedToolError, match="dropped requested filter parameters"):
+        await reader.search_leads(
+            "https://www.linkedin.com/sales/search/people?query=filters&sessionId=old"
+        )
 
 
 def test_results_cap_links_even_when_the_capture_returns_more():

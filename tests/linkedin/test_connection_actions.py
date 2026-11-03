@@ -619,6 +619,35 @@ class TestConnectWithPerson:
         mock_nav.assert_not_awaited()
         mock_submit.assert_not_awaited()
 
+    async def test_campaign_opt_in_leaves_incoming_request_untouched(self, mock_page):
+        actions = _actions(mock_page, _reads("Anfrage erhalten"))
+
+        with (
+            patch.object(
+                actions,
+                "_read_action_signals",
+                new_callable=AsyncMock,
+                return_value=_signals(incoming_row=True),
+            ),
+            patch.object(
+                actions,
+                "_click_incoming_accept",
+                new_callable=AsyncMock,
+            ) as mock_accept,
+            patch.object(
+                PageNavigator,
+                "_navigate_to_page",
+                new_callable=AsyncMock,
+            ) as mock_nav,
+        ):
+            result = await actions.connect_with_person(
+                "testuser", refuse_incoming=True
+            )
+
+        assert result["status"] == "incoming_request"
+        mock_accept.assert_not_awaited()
+        mock_nav.assert_not_awaited()
+
     async def test_incoming_request_send_failed_when_click_fails(self, mock_page):
         """Structural accept click did not land; no locale-text guessing —
         report send_failed without navigating or clicking anything else.

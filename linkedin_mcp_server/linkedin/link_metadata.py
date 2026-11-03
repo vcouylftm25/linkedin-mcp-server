@@ -16,6 +16,8 @@ ReferenceKind = Literal[
     "newsletter",
     "school",
     "conversation",
+    "sales_lead",
+    "sales_company",
     "external",
 ]
 
@@ -159,6 +161,11 @@ _NEWSLETTER_PATH_RE = re.compile(r"^/newsletters/([^/?#]+)")
 _PULSE_PATH_RE = re.compile(r"^/pulse/([^/?#]+)")
 _FEED_PATH_RE = re.compile(r"^/feed/update/([^/?#]+)")
 _MESSAGING_THREAD_PATH_RE = re.compile(r"^/messaging/thread/([^/?#]+)")
+# One segment, optional trailing slash, and nothing after it. `/sales/leader/`
+# is not a lead, and a deeper path is not one we have a contract for. The id
+# keeps its commas (`ACw…,NAME_SEARCH,token`); they are part of the id.
+_SALES_LEAD_PATH_RE = re.compile(r"^/sales/lead/([^/?#]+)/?$")
+_SALES_COMPANY_PATH_RE = re.compile(r"^/sales/company/([^/?#]+)/?$")
 _MAX_REDIRECT_UNWRAP_DEPTH = 5
 
 # Accept both quoted-string and bare-integer JSON list elements, e.g.
@@ -234,6 +241,10 @@ def normalize_reference(
         "conversation",
         "company_urn",
         "job",
+        # The id is the useful part. A card can wrap the name in a sibling
+        # and leave the anchor itself unlabeled.
+        "sales_lead",
+        "sales_company",
     }:
         return None
 
@@ -352,6 +363,12 @@ def classify_link(href: str) -> tuple[ReferenceKind, str] | None:
         if unquote(match.group(1)) == "new":
             return None
         return "conversation", f"/messaging/thread/{match.group(1)}/"
+
+    if match := _SALES_LEAD_PATH_RE.match(path):
+        return "sales_lead", f"/sales/lead/{match.group(1)}/"
+
+    if match := _SALES_COMPANY_PATH_RE.match(path):
+        return "sales_company", f"/sales/company/{match.group(1)}/"
 
     return None
 

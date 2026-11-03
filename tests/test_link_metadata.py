@@ -1040,3 +1040,52 @@ class TestClassifyLink:
         assert len(references) == 1
         assert references[0]["kind"] == "conversation"
         assert references[0]["url"] == "/messaging/thread/2-xyz/"
+
+    def test_sales_lead_and_company_urls_keep_their_ids(self):
+        """Sales Navigator result anchors are not public /in/ or /company/ URLs.
+
+        The id keeps the commas LinkedIn puts in it. A query is tracking,
+        not part of the id. Dropping the match makes the anchor disappear
+        from a result page.
+        """
+        assert classify_link(
+            "https://www.linkedin.com/sales/lead/"
+            "ACwAAASYNTHETIC1,NAME_SEARCH,synthetic-token?trk=1"
+        ) == (
+            "sales_lead",
+            "/sales/lead/ACwAAASYNTHETIC1,NAME_SEARCH,synthetic-token/",
+        )
+        assert classify_link("https://www.linkedin.com/sales/company/900001/") == (
+            "sales_company",
+            "/sales/company/900001/",
+        )
+
+    @pytest.mark.parametrize(
+        "href",
+        [
+            "https://www.linkedin.com/sales/leader/ACwAAA/",
+            "https://www.linkedin.com/sales/lead/ACwAAA/overlay/",
+            "https://www.linkedin.com/sales/companies/900001/",
+            "https://www.linkedin.com/sales/search/people?query=1",
+        ],
+    )
+    def test_nearby_sales_paths_are_not_lead_or_company_profiles(self, href):
+        assert classify_link(href) is None
+
+    def test_an_unlabeled_sales_lead_anchor_is_kept(self):
+        references = build_references(
+            [
+                {
+                    "href": "https://www.linkedin.com/sales/lead/ACwAAA,NAME_SEARCH,t",
+                    "text": "",
+                }
+            ],
+            "sales_nav_search",
+        )
+        assert references == [
+            {
+                "kind": "sales_lead",
+                "url": "/sales/lead/ACwAAA,NAME_SEARCH,t/",
+                "context": "Sales Navigator search results",
+            }
+        ]
