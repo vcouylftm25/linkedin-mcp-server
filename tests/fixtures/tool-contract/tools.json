@@ -807,9 +807,16 @@
       "readOnlyHint": true,
       "openWorldHint": true
     },
-    "description": "Read the first page of your saved Sales Navigator leads.",
+    "description": "Read saved Sales Navigator leads, up to ``max_pages`` pages.",
     "inputSchema": {
-      "properties": {},
+      "properties": {
+        "max_pages": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
       "type": "object",
       "additionalProperties": false
     },
@@ -834,11 +841,17 @@
       "readOnlyHint": true,
       "openWorldHint": true
     },
-    "description": "Read one page of account results from a Sales Navigator search.\n\nPass the URL copied from your Sales Navigator account search after\napplying filters such as industry, company size, headquarters, growth\nor buyer intent. It returns rendered text and any recognized company\nreferences; it does not save or contact accounts.",
+    "description": "Read account results from a Sales Navigator search.\n\nPass the URL copied from your Sales Navigator account search after\napplying filters. ``max_pages`` is capped. Each page is one navigation.\nA page that does not advance, or a final URL that dropped a requested\nfilter, is not returned as a successful filtered page. It does not\nsave or contact accounts.",
     "inputSchema": {
       "properties": {
         "search_url": {
           "type": "string"
+        },
+        "max_pages": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 1,
+          "type": "integer"
         }
       },
       "required": [
@@ -868,11 +881,17 @@
       "readOnlyHint": true,
       "openWorldHint": true
     },
-    "description": "Read one page of lead results from a Sales Navigator search.\n\nPass the URL copied from your Sales Navigator lead search after applying\nfilters such as role, seniority, company, industry, geography, job change\nor recent posting. Returns rendered page text and any profile links the\ngeneric LinkedIn reference reader recognizes; it does not save or contact leads.",
+    "description": "Read lead results from a Sales Navigator search.\n\nPass the URL copied from your Sales Navigator lead search after applying\nfilters. ``max_pages`` is capped. Each page is one navigation and counts\ntoward the daily Sales Navigator navigation cap. A page that does not\nadvance, or a final URL that dropped a requested filter, is not returned\nas a successful filtered page. Leads are structural: name, title,\ncompany, location, the ``/sales/lead/`` URL, and the public ``/in/``\nvanity when the card has one. It does not save or contact leads.",
     "inputSchema": {
       "properties": {
         "search_url": {
           "type": "string"
+        },
+        "max_pages": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 1,
+          "type": "integer"
         }
       },
       "required": [
