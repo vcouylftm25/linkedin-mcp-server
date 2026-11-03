@@ -850,7 +850,9 @@ class ConversationReader:
         unrecognized_labels: list[str] = []
         if isinstance(rows, list):
             for row in rows:
-                if not isinstance(row, dict) or not isinstance(row.get("position"), int):
+                if not isinstance(row, dict) or not isinstance(
+                    row.get("position"), int
+                ):
                     continue
                 name, _language = participant_name(
                     visible=str(row.get("visible") or ""),
@@ -951,8 +953,7 @@ class ConversationReader:
             {
                 "positions": selected_positions,
                 "participants": {
-                    str(position): name
-                    for position, name in participant_names.items()
+                    str(position): name for position, name in participant_names.items()
                 },
                 "filtered": name_filter is not None,
             },
