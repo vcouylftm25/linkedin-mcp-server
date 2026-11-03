@@ -64,8 +64,7 @@ STATUS_MESSAGE = {
         "an active subscription or trial."
     ),
     "login_wall": (
-        "The session landed on a LinkedIn sign-in page. Sales Navigator was "
-        "not opened."
+        "The session landed on a LinkedIn sign-in page. Sales Navigator was not opened."
     ),
     "paywall": (
         "The session landed on a subscription page. Sales Navigator results "
@@ -118,9 +117,9 @@ def page_of(url: str) -> int:
     A present value that is not a positive integer is refused. Guessing
     that it meant the first page would read the wrong results.
     """
-    raw = (
-        parse_qs(urlparse(url).query, keep_blank_values=True).get("page") or [None]
-    )[0]
+    raw = (parse_qs(urlparse(url).query, keep_blank_values=True).get("page") or [None])[
+        0
+    ]
     if raw is None:
         return 1
     if not raw.isdigit() or int(raw) < 1:

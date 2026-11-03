@@ -11,7 +11,6 @@ from linkedin_mcp_server.linkedin.capture import CapturePlan, SectionCapture
 from linkedin_mcp_server.linkedin.contracts import ExtractedSection
 from linkedin_mcp_server.linkedin.link_metadata import dedupe_references
 from linkedin_mcp_server.linkedin.sales_nav_read import (
-    MAX_SALES_NAV_PAGES,
     SALES_NAV_NAVIGATION_KIND,
     STATUS_MESSAGE,
     classify_sales_nav_access,
@@ -123,9 +122,7 @@ class SalesNavigatorReader:
         self._session = session
         self._capture = capture
 
-    async def status(
-        self, *, charge: NavigationCharge | None = None
-    ) -> dict[str, Any]:
+    async def status(self, *, charge: NavigationCharge | None = None) -> dict[str, Any]:
         """Check whether the signed-in session can reach Sales Navigator."""
         result = await self._capture_page(
             SALES_NAV_HOME_URL,
@@ -251,9 +248,7 @@ class SalesNavigatorReader:
                     "results were returned.",
                     ErrorCode.NOT_FOUND,
                 )
-            page_leads = (
-                await self._lead_cards() if kind == "leads" else []
-            )
+            page_leads = await self._lead_cards() if kind == "leads" else []
             ids = (
                 [
                     lead["sales_lead_url"]

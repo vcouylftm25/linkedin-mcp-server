@@ -227,8 +227,7 @@ async def test_page_that_did_not_advance_is_excluded_and_returned_as_error():
     assert result["pagination"]["reason"] == "page_not_advanced"
     assert result["sections"]["search_results"] == "Page 1"
     assert (
-        result["section_errors"]["search_results"]["error_type"]
-        == "pagination_stopped"
+        result["section_errors"]["search_results"]["error_type"] == "pagination_stopped"
     )
 
 

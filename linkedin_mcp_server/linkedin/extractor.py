@@ -196,15 +196,11 @@ class LinkedInExtractor:
         ``refuse_incoming`` leaves an incoming request untouched. The
         default accepts it.
         """
-        if refuse_incoming:
-            return await self._connection.connect_with_person(
-                username,
-                note=note,
-                dry_run=dry_run,
-                refuse_incoming=True,
-            )
         return await self._connection.connect_with_person(
-            username, note=note, dry_run=dry_run
+            username,
+            note=note,
+            dry_run=dry_run,
+            refuse_incoming=refuse_incoming,
         )
 
     async def get_sidebar_profiles(self, username: str) -> dict[str, Any]:

@@ -37,10 +37,13 @@ def test_filter_check_requires_every_requested_query_key():
         requested,
         "https://www.linkedin.com/sales/search/people?query=encoded-differently",
     ) == ("sessionId",)
-    assert missing_filter_keys(
-        requested,
-        "https://www.linkedin.com/sales/search/people?query=kept&sessionId=fresh",
-    ) == ()
+    assert (
+        missing_filter_keys(
+            requested,
+            "https://www.linkedin.com/sales/search/people?query=kept&sessionId=fresh",
+        )
+        == ()
+    )
 
 
 def test_page_url_keeps_filters_and_marks_requested_page():

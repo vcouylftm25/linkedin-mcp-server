@@ -640,9 +640,7 @@ class TestConnectWithPerson:
                 new_callable=AsyncMock,
             ) as mock_nav,
         ):
-            result = await actions.connect_with_person(
-                "testuser", refuse_incoming=True
-            )
+            result = await actions.connect_with_person("testuser", refuse_incoming=True)
 
         assert result["status"] == "incoming_request"
         mock_accept.assert_not_awaited()
