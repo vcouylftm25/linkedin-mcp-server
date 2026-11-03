@@ -66,6 +66,10 @@ TOOL_DELEGATES = {
     "search_jobs": "search_jobs",
     "search_people": "search_people",
     "search_posts": "search_posts",
+    "sales_nav_status": "sales_nav_status",
+    "sales_nav_search_leads": "sales_nav_search_leads",
+    "sales_nav_search_accounts": "sales_nav_search_accounts",
+    "sales_nav_list_leads": "sales_nav_list_leads",
     "create_post": "create_post",
     "send_message": "send_message",
 }
@@ -107,6 +111,7 @@ async def test_constructor_export_and_dependency_use_the_same_facade(monkeypatch
         "_person",
         "_posts",
         "_post_publisher",
+        "_sales_navigator",
     }
     assert set(vars(extractor)) == expected_state
     assert type(constructed) is LinkedInExtractor

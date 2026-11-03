@@ -798,6 +798,126 @@
     "_meta": {
       "fastmcp": {
         "tags": [
+          "prospecting",
+          "sales_navigator"
+        ]
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": true
+    },
+    "description": "Read the first page of your saved Sales Navigator leads.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object",
+      "additionalProperties": false
+    },
+    "name": "sales_nav_list_leads",
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "title": "List Sales Navigator Leads"
+  },
+  {
+    "_meta": {
+      "fastmcp": {
+        "tags": [
+          "prospecting",
+          "sales_navigator",
+          "search"
+        ]
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": true
+    },
+    "description": "Read one page of account results from a Sales Navigator search.\n\nPass the URL copied from your Sales Navigator account search after\napplying filters such as industry, company size, headquarters, growth\nor buyer intent. It returns rendered text and any recognized company\nreferences; it does not save or contact accounts.",
+    "inputSchema": {
+      "properties": {
+        "search_url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "search_url"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "name": "sales_nav_search_accounts",
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "title": "Search Sales Navigator Accounts"
+  },
+  {
+    "_meta": {
+      "fastmcp": {
+        "tags": [
+          "prospecting",
+          "sales_navigator",
+          "search"
+        ]
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": true
+    },
+    "description": "Read one page of lead results from a Sales Navigator search.\n\nPass the URL copied from your Sales Navigator lead search after applying\nfilters such as role, seniority, company, industry, geography, job change\nor recent posting. Returns rendered page text and any profile links the\ngeneric LinkedIn reference reader recognizes; it does not save or contact leads.",
+    "inputSchema": {
+      "properties": {
+        "search_url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "search_url"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "name": "sales_nav_search_leads",
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "title": "Search Sales Navigator Leads"
+  },
+  {
+    "_meta": {
+      "fastmcp": {
+        "tags": [
+          "prospecting",
+          "sales_navigator"
+        ]
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": true
+    },
+    "description": "Check whether the signed-in LinkedIn session reaches Sales Navigator.\n\nThis only confirms whether a Sales Navigator route was reached. It\ncannot confirm the subscription tier or trial dates.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object",
+      "additionalProperties": false
+    },
+    "name": "sales_nav_status",
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "title": "Sales Navigator Status"
+  },
+  {
+    "_meta": {
+      "fastmcp": {
+        "tags": [
           "company",
           "search"
         ]

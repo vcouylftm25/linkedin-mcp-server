@@ -88,6 +88,22 @@
         "coroutine": true,
         "signature": "(self, username: 'str', requested: 'set[str]', callbacks: 'ProgressCallback | None' = None, max_scrolls: 'int | None' = None, *, main_profile_already_loaded: 'bool' = False, allow_self_alias: 'bool' = False) -> 'dict[str, Any]'"
       },
+      "sales_nav_list_leads": {
+        "coroutine": true,
+        "signature": "(self) -> 'dict[str, Any]'"
+      },
+      "sales_nav_search_accounts": {
+        "coroutine": true,
+        "signature": "(self, search_url: 'str') -> 'dict[str, Any]'"
+      },
+      "sales_nav_search_leads": {
+        "coroutine": true,
+        "signature": "(self, search_url: 'str') -> 'dict[str, Any]'"
+      },
+      "sales_nav_status": {
+        "coroutine": true,
+        "signature": "(self) -> 'dict[str, Any]'"
+      },
       "search_companies": {
         "coroutine": true,
         "signature": "(self, keywords: 'str') -> 'dict[str, Any]'"
@@ -131,6 +147,10 @@
       "read_company",
       "read_job",
       "read_person",
+      "sales_nav_list_leads",
+      "sales_nav_search_accounts",
+      "sales_nav_search_leads",
+      "sales_nav_status",
       "search_companies",
       "search_conversations",
       "search_jobs",
@@ -640,6 +660,64 @@
           "required": [
             "linkedin_username"
           ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_list_leads": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_search_accounts": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "search_url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "search_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_search_leads": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "search_url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "search_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_status": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {},
           "type": "object"
         },
         "output": {

@@ -1,0 +1,115 @@
+{
+  "call": {
+    "arguments": {},
+    "method": "sales_nav_list_leads"
+  },
+  "events": [
+    {
+      "call": "sales_nav_list_leads",
+      "kind": "sleep",
+      "reason": "sleep",
+      "seconds": 2.0
+    },
+    {
+      "call": "sales_nav_list_leads",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "sales_nav_list_leads",
+      "extra": {
+        "target_url": "https://www.linkedin.com/sales/lists/people/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "sales_nav_list_leads",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/sales/lists/people/",
+      "requested_url": "https://www.linkedin.com/sales/lists/people/",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "sales_nav_list_leads",
+      "description": "goto https://www.linkedin.com/sales/lists/people/",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "sales_nav_list_leads",
+      "extra": {
+        "target_url": "https://www.linkedin.com/sales/lists/people/",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "sales_nav_list_leads",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "sales_nav_list_leads",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "sales_nav_list_leads",
+      "kind": "boundary.rate_limit"
+    },
+    {
+      "call": "sales_nav_list_leads",
+      "kind": "wait_for_selector",
+      "operation": "main",
+      "selector": "main",
+      "state": "visible",
+      "timeout_ms": null
+    },
+    {
+      "call": "sales_nav_list_leads",
+      "dismissed": false,
+      "kind": "boundary.modal"
+    },
+    {
+      "actual_scrolls": 2,
+      "call": "sales_nav_list_leads",
+      "kind": "boundary.scroll_body",
+      "max_scrolls": 0,
+      "pause_time": 0.5
+    },
+    {
+      "arg": {
+        "selectors": [
+          "main"
+        ]
+      },
+      "call": "sales_nav_list_leads",
+      "kind": "evaluate",
+      "operation": "root_content",
+      "program_digest": "e6b2be4ebddd"
+    }
+  ],
+  "result": {
+    "pagination": {
+      "next_offset": null,
+      "pages_fetched": 1,
+      "reason": "single_page",
+      "result_kind": "leads"
+    },
+    "section_names": [
+      "search_results"
+    ],
+    "sections": {
+      "search_results": "Result content"
+    },
+    "url": "https://www.linkedin.com/sales/lists/people/"
+  },
+  "scenario": "sales_nav_list_leads__baseline",
+  "schema_version": 1
+}

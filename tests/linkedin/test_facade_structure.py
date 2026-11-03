@@ -26,6 +26,7 @@ FACADE_PACKAGE_IMPORTERS = {
     Path("tests/linkedin/test_facade_contracts.py"),
     Path("tests/linkedin/test_facade_results.py"),
     Path("tests/linkedin/test_facade_structure.py"),
+    Path("tests/test_sales_navigator_dom.py"),
     Path("tests/test_dependencies.py"),
 }
 
@@ -54,6 +55,10 @@ PUBLIC_SIGNATURES = {
     "search_jobs": "(self, keywords: 'str', location: 'str | None' = None, max_pages: 'int' = 3, date_posted: 'str | None' = None, job_type: 'str | None' = None, experience_level: 'str | None' = None, work_type: 'str | None' = None, easy_apply: 'bool' = False, sort_by: 'str | None' = None, tool_timeout: 'float' = 180.0) -> 'dict[str, Any]'",
     "search_people": "(self, keywords: 'str', location: 'str | None' = None, network: 'list[str] | None' = None, current_company: 'str | None' = None) -> 'dict[str, Any]'",
     "search_posts": "(self, keywords: 'str', date_posted: 'str | None' = None, max_pages: 'int' = 3, content_type: 'str | None' = None) -> 'dict[str, Any]'",
+    "sales_nav_status": "(self) -> 'dict[str, Any]'",
+    "sales_nav_search_leads": "(self, search_url: 'str') -> 'dict[str, Any]'",
+    "sales_nav_search_accounts": "(self, search_url: 'str') -> 'dict[str, Any]'",
+    "sales_nav_list_leads": "(self) -> 'dict[str, Any]'",
     "send_message": "(self, linkedin_username: 'str', message: 'str', *, confirm_send: 'bool', profile_urn: 'str | None' = None, dry_run: 'bool' = False) -> 'dict[str, Any]'",
 }
 
@@ -82,6 +87,10 @@ DELEGATES = {
     "search_jobs": ("_jobs", "search_jobs"),
     "search_people": ("_person", "search_people"),
     "search_posts": ("_posts", "search_posts"),
+    "sales_nav_status": ("_sales_navigator", "status"),
+    "sales_nav_search_leads": ("_sales_navigator", "search_leads"),
+    "sales_nav_search_accounts": ("_sales_navigator", "search_accounts"),
+    "sales_nav_list_leads": ("_sales_navigator", "list_leads"),
     "send_message": ("_message_sender", "send_message"),
 }
 
@@ -110,6 +119,10 @@ DELEGATE_CALLS = {
     "search_jobs": "self._jobs.search_jobs(keywords, location, max_pages, date_posted, job_type, experience_level, work_type, easy_apply, sort_by, tool_timeout)",
     "search_people": "self._person.search_people(keywords, location=location, network=network, current_company=current_company)",
     "search_posts": "self._posts.search_posts(keywords, date_posted=date_posted, max_pages=max_pages, content_type=content_type)",
+    "sales_nav_status": "self._sales_navigator.status()",
+    "sales_nav_search_leads": "self._sales_navigator.search_leads(search_url)",
+    "sales_nav_search_accounts": "self._sales_navigator.search_accounts(search_url)",
+    "sales_nav_list_leads": "self._sales_navigator.list_leads()",
     "send_message": "self._message_sender.send_message(linkedin_username, message, confirm_send=confirm_send, profile_urn=profile_urn, dry_run=dry_run)",
 }
 
@@ -125,6 +138,7 @@ FACADE_STATE = {
     "_person",
     "_posts",
     "_post_publisher",
+    "_sales_navigator",
 }
 
 PERMANENT_ALIASES = {

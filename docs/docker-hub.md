@@ -20,6 +20,7 @@ A Model Context Protocol (MCP) server that connects AI assistants to LinkedIn. A
 - **Saved Jobs**: List job postings saved by the authenticated user
 - **Dismiss Jobs**: Dismiss a job from job search so later searches no longer show it
 - **People Search**: Search for people by keywords and location
+- **Sales Navigator**: Check access, read one page of lead or account search results from a URL copied from Sales Navigator, and read the first page of saved leads. These tools do not save leads or contact people.
 - **Person Posts**: Get recent activity/posts from a person's profile
 - **Company Posts**: Get recent posts from a company's LinkedIn feed
 - **Home Feed**: Get recent posts from the authenticated user's LinkedIn home feed

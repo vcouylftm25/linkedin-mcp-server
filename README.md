@@ -83,6 +83,10 @@ open the browser; an uncertain send consumes a slot until the next local day.
 | `get_saved_jobs` | List your saved job postings, with job IDs for looking up their details. |
 | `dismiss_job` | Dismiss a job from job search so later searches no longer show it. Irreversible. |
 | `search_people` | Find people by keyword, location, connection degree, and current company. |
+| `sales_nav_status` | Check whether the signed-in browser reaches LinkedIn Sales Navigator. |
+| `sales_nav_search_leads` | Read one page from a Sales Navigator lead-search URL, including visible profile links. |
+| `sales_nav_search_accounts` | Read one page from a Sales Navigator account-search URL, including visible company links. |
+| `sales_nav_list_leads` | Read the first page of saved Sales Navigator leads. |
 | `get_job_details` | Read a job posting's description, requirements, and company details. |
 | `get_job_apply_url` | Check whether a job uses Easy Apply or links to an employer's application. |
 | `get_easy_apply_form` | Read an Easy Apply form: each field's label, type, options and prefilled value. Never types or submits. |

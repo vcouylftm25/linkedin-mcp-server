@@ -52,6 +52,7 @@ from linkedin_mcp_server.prospecting_limits import ProspectingLimits
 from linkedin_mcp_server.tools.person import register_person_tools
 from linkedin_mcp_server.tools.post import register_post_tools
 from linkedin_mcp_server.tools.prospecting import register_prospecting_tools
+from linkedin_mcp_server.tools.sales_navigator import register_sales_navigator_tools
 
 if TYPE_CHECKING:
     from linkedin_mcp_server.daemon.discovery import Unanswered
@@ -332,6 +333,7 @@ def create_mcp_server(
         register_feed_tools(mcp, tool_timeout=tool_timeout)
         register_post_tools(mcp, tool_timeout=tool_timeout)
         register_prospecting_tools(mcp, limits=prospecting_limits)
+        register_sales_navigator_tools(mcp, tool_timeout=tool_timeout)
 
         # Inside the gate with the rest, and easy to miss because it is the one
         # tool defined here rather than in a `register_*` call. Left out of the

@@ -28,6 +28,7 @@ from linkedin_mcp_server.linkedin.posts import PostSearch
 from linkedin_mcp_server.linkedin.post_publisher import PostPublisher
 from linkedin_mcp_server.linkedin.profile_page import ProfilePageReader
 from linkedin_mcp_server.linkedin.session import PageSession
+from linkedin_mcp_server.linkedin.sales_navigator import SalesNavigatorReader
 from linkedin_mcp_server.linkedin.text import (
     strip_conversation_chrome as strip_conversation_chrome,
     strip_linkedin_noise as strip_linkedin_noise,
@@ -71,6 +72,23 @@ class LinkedInExtractor:
         self._conversations = ConversationReader(
             session, navigator, content, profile_page
         )
+        self._sales_navigator = SalesNavigatorReader(session, capture)
+
+    async def sales_nav_status(self) -> dict[str, Any]:
+        """Check whether the signed-in browser reaches Sales Navigator."""
+        return await self._sales_navigator.status()
+
+    async def sales_nav_search_leads(self, search_url: str) -> dict[str, Any]:
+        """Read one page of Sales Navigator lead results."""
+        return await self._sales_navigator.search_leads(search_url)
+
+    async def sales_nav_search_accounts(self, search_url: str) -> dict[str, Any]:
+        """Read one page of Sales Navigator account results."""
+        return await self._sales_navigator.search_accounts(search_url)
+
+    async def sales_nav_list_leads(self) -> dict[str, Any]:
+        """Read the first page of saved Sales Navigator leads."""
+        return await self._sales_navigator.list_leads()
 
     async def get_page_text(self) -> str:
         """Extract innerText from the main content area of the current page."""

@@ -109,6 +109,22 @@
       "description": "Search for people on LinkedIn by keywords, location, connection degree (1st/2nd/3rd), and current company"
     },
     {
+      "name": "sales_nav_status",
+      "description": "Check whether the signed-in LinkedIn session reaches the Sales Navigator page surface"
+    },
+    {
+      "name": "sales_nav_search_leads",
+      "description": "Read one page of Sales Navigator lead search results from a URL copied from the Sales Navigator UI"
+    },
+    {
+      "name": "sales_nav_search_accounts",
+      "description": "Read one page of Sales Navigator account search results from a URL copied from the Sales Navigator UI"
+    },
+    {
+      "name": "sales_nav_list_leads",
+      "description": "Read the first page of saved Sales Navigator leads without saving or contacting anyone"
+    },
+    {
       "name": "get_inbox",
       "description": "List recent conversations from the LinkedIn messaging inbox"
     },

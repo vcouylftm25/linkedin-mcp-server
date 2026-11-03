@@ -910,6 +910,28 @@ async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
             elif method == "search_posts":
                 arguments = {"keywords": "mathematics", "max_pages": 2}
                 result = await extractor.search_posts(**arguments)
+            elif method == "sales_nav_status":
+                arguments = {}
+                page.goto_landings.append("https://www.linkedin.com/sales/home")
+                result = await extractor.sales_nav_status()
+            elif method == "sales_nav_search_leads":
+                arguments = {
+                    "search_url": "https://www.linkedin.com/sales/search/people?query=leads"
+                }
+                page.goto_landings.append(arguments["search_url"])
+                result = await extractor.sales_nav_search_leads(**arguments)
+            elif method == "sales_nav_search_accounts":
+                arguments = {
+                    "search_url": "https://www.linkedin.com/sales/search/company?query=accounts"
+                }
+                page.goto_landings.append(arguments["search_url"])
+                result = await extractor.sales_nav_search_accounts(**arguments)
+            elif method == "sales_nav_list_leads":
+                arguments = {}
+                page.goto_landings.append(
+                    "https://www.linkedin.com/sales/lists/people/"
+                )
+                result = await extractor.sales_nav_list_leads()
             else:
                 raise AssertionError(method)
     page.assert_clean()
@@ -1251,14 +1273,30 @@ TOOL_FACADE_METHODS = {
     "search_jobs",
     "search_people",
     "search_posts",
+    "sales_nav_status",
+    "sales_nav_search_leads",
+    "sales_nav_search_accounts",
+    "sales_nav_list_leads",
     "send_message",
 }
 COMPATIBILITY_METHODS = {"get_page_text", "click_button_by_text"}
 
 
 async def build_policy_traces() -> dict[str, dict[str, Any]]:
+    sales_nav_traces = {
+        f"{method.replace('_', '-')}.json": await _single_capture_facade_scenario(
+            method
+        )
+        for method in (
+            "sales_nav_status",
+            "sales_nav_search_leads",
+            "sales_nav_search_accounts",
+            "sales_nav_list_leads",
+        )
+    }
     traces = {
         "facade-contract.json": await _facade_contract_trace(),
+        **sales_nav_traces,
         "generic-ordinary.json": await _generic_capture_scenario(
             "extract_page__ordinary", "https://www.linkedin.com/in/ada-lovelace/"
         ),
