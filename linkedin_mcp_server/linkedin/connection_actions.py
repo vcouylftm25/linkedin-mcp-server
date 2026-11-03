@@ -803,6 +803,8 @@ class ConnectionActions:
         irreversible, and a campaign must not accept someone the banker
         did not choose.
         """
+        if connection._campaign_invite_active():
+            connection.require_campaign_refuse_incoming(refuse_incoming)
         username = normalize_person_identifier(username)
         url = person_profile_url(username, "/")
 

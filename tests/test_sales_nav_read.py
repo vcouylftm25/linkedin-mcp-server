@@ -29,14 +29,21 @@ def test_access_classification_uses_landed_url(url, expected):
     assert classify_sales_nav_access(url) == expected
 
 
-def test_filter_check_requires_every_requested_query_key():
+def test_filter_check_ignores_session_id_and_requires_real_filters():
     requested = (
         "https://www.linkedin.com/sales/search/people?query=filters&sessionId=abc"
     )
+    assert (
+        missing_filter_keys(
+            requested,
+            "https://www.linkedin.com/sales/search/people?query=encoded-differently",
+        )
+        == ()
+    )
     assert missing_filter_keys(
         requested,
-        "https://www.linkedin.com/sales/search/people?query=encoded-differently",
-    ) == ("sessionId",)
+        "https://www.linkedin.com/sales/search/people",
+    ) == ("query",)
     assert (
         missing_filter_keys(
             requested,

@@ -8,17 +8,20 @@ accidental browser write from being wired into the campaign tools.
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Protocol
+from urllib.parse import urlsplit
 
+from linkedin_mcp_server.core.exceptions import AuthenticationError
+from linkedin_mcp_server.core.throttle import throttled_count
 from linkedin_mcp_server.error_handler import CodedToolError
+from linkedin_mcp_server.linkedin.connection import campaign_invite_scope
 from linkedin_mcp_server.profile_lease import (
     ProfileLeaseUnavailableError,
-    _release_locked_fd,
-    acquire_locked_fd,
+    get_profile_lease,
 )
 from linkedin_mcp_server.prospecting.domain import LeadState, PauseReason, PendingSend
 from linkedin_mcp_server.prospecting.repository import ProspectingRepository
@@ -37,6 +40,38 @@ class ExecutionResult:
     outcome: str
     submitted: bool
     pause_reason: PauseReason | None = None
+    landing_url: str | None = None
+
+
+_NOTE_QUOTA_OUTCOMES = frozenset({"custom_note_limit_reached", "note_quota"})
+_CHECKPOINT_OUTCOMES = frozenset({"checkpoint", "captcha"})
+
+
+def _checkpoint_landing(url: str | None) -> bool:
+    """Whether *url* is a LinkedIn checkpoint or CAPTCHA route.
+
+    The path only. A query can carry the same letters without being the wall.
+    """
+    if not url:
+        return False
+    path = urlsplit(url).path.lower()
+    return "/checkpoint" in path or "/challenge" in path or "captcha" in path
+
+
+def circuit_pause(result: ExecutionResult) -> PauseReason | None:
+    """Why this attempt stops the account, aside from the weekly cap.
+
+    429 and 999 are whatever the throttle listener counted for this call.
+    A checkpoint or CAPTCHA is the landing URL or the outcome the executor
+    names. The note quota is the connect outcome ``custom_note_limit_reached``.
+    """
+    if throttled_count() > 0:
+        return PauseReason.RATE_LIMITED
+    if _checkpoint_landing(result.landing_url) or result.outcome in _CHECKPOINT_OUTCOMES:
+        return PauseReason.CHECKPOINT
+    if result.outcome in _NOTE_QUOTA_OUTCOMES:
+        return PauseReason.NOTE_QUOTA
+    return result.pause_reason
 
 
 @dataclass(frozen=True)
@@ -49,19 +84,23 @@ class TickResult:
 
 @contextmanager
 def exclusive_profile_lease(auth_root: Path) -> Iterator[None]:
-    """Hold the existing profile lock for the complete tick or refuse it."""
-    try:
-        fd = acquire_locked_fd(auth_root / "profile.lock", exclusive=True)
-    except ProfileLeaseUnavailableError:
-        raise
-    if fd is None:
+    """Hold this process's profile lease for the tick, or refuse it.
+
+    Chromium's launch takes another reference on the same ``ProfileLease``.
+    A raw descriptor on ``profile.lock`` fails that second exclusive flock,
+    so a launchd tick that locked the file itself could not open the browser.
+    """
+    # The argument is a profile directory. The lease key is its parent, which
+    # is the auth root the tick was given.
+    lease = get_profile_lease(auth_root / "profile")
+    if not lease.try_acquire():
         raise ProfileLeaseUnavailableError(
             "An interactive session holds the LinkedIn profile; this tick was not run."
         )
     try:
         yield
     finally:
-        _release_locked_fd(fd)
+        lease.release()
 
 
 class CampaignRunner:
@@ -129,7 +168,24 @@ class CampaignRunner:
                 if after_begin is not None:
                     after_begin(item)
                 attempted += 1
-                result = executor(item)
+                try:
+                    with (
+                        campaign_invite_scope()
+                        if action == "invite"
+                        else nullcontext()
+                    ):
+                        result = executor(item)
+                except AuthenticationError:
+                    until = self.repository.pause(
+                        campaign_id, PauseReason.CHECKPOINT, now=self.clock()
+                    )
+                    return TickResult(
+                        attempted,
+                        True,
+                        until.isoformat(),
+                        PauseReason.CHECKPOINT.value,
+                    )
+                reason = circuit_pause(result)
                 retain_reservation = result.submitted or result.outcome in {
                     "outcome_unknown",
                     "send_failed",
@@ -141,7 +197,7 @@ class CampaignRunner:
                         new_state=result.state,
                         outcome=result.outcome,
                         release_slots=False,
-                        pause_reason=result.pause_reason,
+                        pause_reason=reason,
                         now=self.clock(),
                     )
                 else:
@@ -151,15 +207,15 @@ class CampaignRunner:
                         new_state=result.state,
                         outcome=result.outcome,
                         release_slots=True,
-                        pause_reason=result.pause_reason,
+                        pause_reason=reason,
                         now=self.clock(),
                     )
-                if result.pause_reason:
+                if reason:
                     return TickResult(
                         attempted,
                         True,
                         paused_until.isoformat() if paused_until else None,
-                        result.pause_reason.value,
+                        reason.value,
                     )
         return TickResult(
             attempted,

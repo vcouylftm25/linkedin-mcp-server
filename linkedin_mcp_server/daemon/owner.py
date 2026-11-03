@@ -416,18 +416,14 @@ def create_owner_server(
     from starlette.requests import Request
     from starlette.responses import JSONResponse
 
+    from linkedin_mcp_server.prospecting.roots import prospecting_limits_for
     from linkedin_mcp_server.server import create_mcp_server
-    from linkedin_mcp_server.prospecting_limits import ProspectingLimits
 
     mcp = create_mcp_server(
         tool_timeout=config.server.tool_timeout_seconds,
         role=ServerRole.OWNER,
         auth_token=token,
-        prospecting_limits=ProspectingLimits(
-            config.server.daily_invite_limit,
-            config.server.daily_message_limit,
-            config.server.prospecting_state_dir,
-        ),
+        prospecting_limits=prospecting_limits_for(config),
     )
 
     if stand_down is not None:

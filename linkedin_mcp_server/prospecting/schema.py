@@ -30,6 +30,16 @@ _STATEMENTS = (
         pause_reason TEXT
     )
     """,
+    # One row for the account. A refusal pauses every campaign, including one
+    # created while the pause still holds. The columns on ``campaigns`` are
+    # not that pause: writing one row would leave the next campaign running.
+    """
+    CREATE TABLE IF NOT EXISTS account_pause (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        paused_until TEXT NOT NULL,
+        pause_reason TEXT NOT NULL
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS leads (
         lead_vanity TEXT NOT NULL,

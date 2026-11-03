@@ -937,6 +937,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                     tool_timeout=config.server.tool_timeout_seconds,
                     role=ServerRole.PROXY,
                     proxy_backend=shared,
+                    prospecting_limits=limits,
                 )
 
             if transport == "streamable-http":

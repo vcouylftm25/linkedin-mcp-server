@@ -112,21 +112,10 @@ class ProspectingLimits:
                 ErrorCode.INVALID_ARGUMENT,
             )
         day = now.date().isoformat()
-        daily_count = db.execute(
-            "SELECT count(*) FROM writes WHERE day=? AND kind=?", (day, kind)
-        ).fetchone()[0]
-        daily_count += self._unconfirmed_outside(db, kind, "day<>?", (day,))
+        daily_count, weekly_count = self._usage(db, kind, now)
         limit = self.limits[kind]
         if limit and daily_count >= limit:
             raise self._daily_error(kind, limit, now)
-        start, end = week_bounds(now)
-        weekly_count = db.execute(
-            "SELECT count(*) FROM writes WHERE kind=? AND day>=? AND day<?",
-            (kind, start, end),
-        ).fetchone()[0]
-        weekly_count += self._unconfirmed_outside(
-            db, kind, "(day<? OR day>=?)", (start, end)
-        )
         weekly = self.weekly_limits[kind]
         if weekly and weekly_count >= weekly:
             raise self._weekly_error(kind, weekly, now)
@@ -136,6 +125,29 @@ class ProspectingLimits:
             (token, day, kind),
         )
         return token
+
+    def _usage(
+        self, db: sqlite3.Connection, kind: str, now: datetime
+    ) -> tuple[int, int]:
+        """Today's count and this week's count, the same numbers ``reserve`` uses.
+
+        An unconfirmed write from another day still counts against today, and
+        one from outside this week still counts against the week. ``report``
+        and ``reserve`` both call this so a status line cannot show room the
+        next send does not have.
+        """
+        day = now.date().isoformat()
+        daily = db.execute(
+            "SELECT count(*) FROM writes WHERE day=? AND kind=?", (day, kind)
+        ).fetchone()[0]
+        daily += self._unconfirmed_outside(db, kind, "day<>?", (day,))
+        start, end = week_bounds(now)
+        weekly = db.execute(
+            "SELECT count(*) FROM writes WHERE kind=? AND day>=? AND day<?",
+            (kind, start, end),
+        ).fetchone()[0]
+        weekly += self._unconfirmed_outside(db, kind, "(day<? OR day>=?)", (start, end))
+        return daily, weekly
 
     @staticmethod
     def _unconfirmed_outside(
@@ -211,28 +223,13 @@ class ProspectingLimits:
         used_today = {kind: 0 for kind in self.limits}
         used_week = {kind: 0 for kind in self.weekly_limits}
         if self.path.exists():
+            # No handler around the query. A database that cannot be read must
+            # not look like an account that has sent nothing.
             with closing(sqlite3.connect(self.path, timeout=30)) as db:
-                try:
-                    rows = db.execute(
-                        "SELECT kind, count(*) FROM writes WHERE day=? GROUP BY kind",
-                        (day,),
-                    ).fetchall()
-                    week_rows = db.execute(
-                        """
-                        SELECT kind, count(*) FROM writes
-                        WHERE day>=? AND day<? GROUP BY kind
-                        """,
-                        (start, end),
-                    ).fetchall()
-                except sqlite3.OperationalError:
-                    rows = []
-                    week_rows = []
-            for kind, count in rows:
-                if kind in used_today:
-                    used_today[kind] = count
-            for kind, count in week_rows:
-                if kind in used_week:
-                    used_week[kind] = count
+                for kind in self.limits:
+                    daily, weekly = self._usage(db, kind, now)
+                    used_today[kind] = daily
+                    used_week[kind] = weekly
         return {
             "day": day,
             "resets_at": reset.isoformat(),

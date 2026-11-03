@@ -222,9 +222,9 @@ class ProspectingRepository:
             row = db.execute(
                 "SELECT * FROM campaigns WHERE id=?", (campaign_id,)
             ).fetchone()
-        if row is None:
-            raise UnknownCampaign(f"Unknown campaign {campaign_id}.")
-        return _campaign(row)
+            if row is None:
+                raise UnknownCampaign(f"Unknown campaign {campaign_id}.")
+            return self._with_account_pause(db, _campaign(row))
 
     def get_lead(self, lead_vanity: str, kind: str) -> Lead:
         with closing(self._open()) as db:
@@ -345,9 +345,9 @@ class ProspectingRepository:
                 row = db.execute(
                     """
                     SELECT * FROM leads
-                    WHERE lead_vanity=? AND campaign_id=?
+                    WHERE lead_vanity=? AND campaign_id=? AND kind=?
                     """,
-                    (vanity, campaign_id),
+                    (vanity, campaign_id, action),
                 ).fetchone()
                 if row is None:
                     raise ApprovalRejected(f"{vanity} is not a lead in this campaign.")
@@ -615,23 +615,8 @@ class ProspectingRepository:
             elif outcome is not None and row["write_token"]:
                 limits.note_outcome_in(db, row["write_token"], outcome)
             if pause_reason is not None:
-                paused_until = pause_deadline(moment)
-                db.execute(
-                    """
-                    UPDATE campaigns SET paused_until=?, pause_reason=? WHERE id=?
-                    """,
-                    (_iso(paused_until), pause_reason.value, item.campaign_id),
-                )
-                self._event(
-                    db,
-                    item.campaign_id,
-                    None,
-                    "campaign_paused",
-                    {
-                        "reason": pause_reason.value,
-                        "paused_until": _iso(paused_until),
-                    },
-                    moment,
+                paused_until = self._pause_account(
+                    db, item.campaign_id, pause_reason, moment
                 )
             self._event(
                 db,
@@ -658,7 +643,6 @@ class ProspectingRepository:
         now: datetime | None = None,
     ) -> datetime:
         moment = _now(now)
-        until = pause_deadline(moment)
         with closing(self._open()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             if (
@@ -668,19 +652,92 @@ class ProspectingRepository:
                 is None
             ):
                 raise UnknownCampaign(f"Unknown campaign {campaign_id}.")
-            db.execute(
-                "UPDATE campaigns SET paused_until=?, pause_reason=? WHERE id=?",
-                (_iso(until), reason.value, campaign_id),
-            )
+            until = self._pause_account(db, campaign_id, reason, moment)
+        return until
+
+    def unconfirmed_leads(self) -> list[Lead]:
+        """Leads whose last attempt has not been reconciled."""
+        states = (
+            LeadState.INVITE_UNCONFIRMED.value,
+            LeadState.MESSAGE_UNCONFIRMED.value,
+        )
+        with closing(self._open()) as db:
+            rows = db.execute(
+                f"""
+                SELECT * FROM leads
+                WHERE state IN ({",".join("?" for _ in states)})
+                ORDER BY lead_vanity, kind
+                """,
+                states,
+            ).fetchall()
+        return [_lead(row) for row in rows]
+
+    def apply_unconfirmed_move(
+        self,
+        limits: Any,
+        lead: Lead,
+        new_state: LeadState,
+        *,
+        now: datetime,
+    ) -> None:
+        """Persist one reconciliation decision.
+
+        Returning to an approved state releases the write reservation and
+        reopens the consumed approval: the re-read confirmed the invitation
+        was not sent, so the slot and the queue both belong to a later try.
+        A confirmed send keeps the reservation.
+        """
+        moment = _now(now)
+        returning = new_state in {
+            LeadState.INVITE_APPROVED,
+            LeadState.MESSAGE_APPROVED,
+        }
+        with closing(self._open()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = self._locked_lead(db, lead.lead_vanity, lead.kind)
+            current = LeadState(row["state"])
+            if current is not lead.state:
+                raise AttemptConflict(
+                    f"{lead.lead_vanity} is {current.value}, not {lead.state.value}."
+                )
+            transition(current, new_state)
+            if returning:
+                token = row["write_token"]
+                if token:
+                    limits.release_in(db, token)
+                db.execute(
+                    """
+                    UPDATE leads
+                    SET state=?, write_token=NULL, updated_at=?
+                    WHERE lead_vanity=? AND kind=?
+                    """,
+                    (new_state.value, _iso(moment), lead.lead_vanity, lead.kind),
+                )
+                action = "invite" if lead.kind == "invite" else "message"
+                db.execute(
+                    """
+                    UPDATE approvals SET consumed_at=NULL
+                    WHERE lead_vanity=? AND lead_kind=? AND action=?
+                      AND consumed_at IS NOT NULL
+                    """,
+                    (lead.lead_vanity, lead.kind, action),
+                )
+            else:
+                db.execute(
+                    """
+                    UPDATE leads SET state=?, updated_at=?
+                    WHERE lead_vanity=? AND kind=?
+                    """,
+                    (new_state.value, _iso(moment), lead.lead_vanity, lead.kind),
+                )
             self._event(
                 db,
-                campaign_id,
-                None,
-                "campaign_paused",
-                {"reason": reason.value, "paused_until": _iso(until)},
+                row["campaign_id"],
+                lead.lead_vanity,
+                "reconciled",
+                {"from": current.value, "to": new_state.value},
                 moment,
             )
-        return until
 
     def status(
         self, campaign_id: str, *, now: datetime | None = None
@@ -753,6 +810,66 @@ class ProspectingRepository:
                 (token,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def _pause_account(
+        self,
+        db: sqlite3.Connection,
+        campaign_id: str,
+        reason: PauseReason,
+        moment: datetime,
+    ) -> datetime:
+        """Pause every campaign on this account for 24 hours.
+
+        One row, not a column on the campaign that happened to be running.
+        """
+        until = pause_deadline(moment)
+        db.execute(
+            """
+            INSERT INTO account_pause(id, paused_until, pause_reason)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                paused_until=excluded.paused_until,
+                pause_reason=excluded.pause_reason
+            """,
+            (_iso(until), reason.value),
+        )
+        self._event(
+            db,
+            campaign_id,
+            None,
+            "account_paused",
+            {"reason": reason.value, "paused_until": _iso(until)},
+            moment,
+        )
+        return until
+
+    def _with_account_pause(
+        self, db: sqlite3.Connection, campaign: Campaign
+    ) -> Campaign:
+        """Return *campaign* paused exactly when the account is.
+
+        The columns on the campaign row are ignored. A pause written there
+        would stop one campaign and leave the rest of the account sending.
+        """
+        row = db.execute(
+            "SELECT paused_until, pause_reason FROM account_pause WHERE id=1"
+        ).fetchone()
+        if row is None:
+            return Campaign(
+                id=campaign.id,
+                name=campaign.name,
+                created_at=campaign.created_at,
+                filters_json=campaign.filters_json,
+            )
+        reason = row["pause_reason"]
+        return Campaign(
+            id=campaign.id,
+            name=campaign.name,
+            created_at=campaign.created_at,
+            filters_json=campaign.filters_json,
+            paused_until=_parse_time(row["paused_until"]),
+            pause_reason=PauseReason(reason) if reason else None,
+        )
 
     def _require_campaign(self, campaign_id: str) -> None:
         with closing(self._open()) as db:

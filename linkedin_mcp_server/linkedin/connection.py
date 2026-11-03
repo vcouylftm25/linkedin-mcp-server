@@ -20,6 +20,9 @@ read for any state.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Literal
 
@@ -32,6 +35,40 @@ ConnectionState = Literal[
     "self_profile",
     "unavailable",
 ]
+
+
+class CampaignInviteError(Exception):
+    """A campaign tried to connect without refusing an incoming request."""
+
+
+_campaign_invite: ContextVar[bool] = ContextVar("campaign_invite", default=False)
+
+
+def _campaign_invite_active() -> bool:
+    return _campaign_invite.get()
+
+
+@contextmanager
+def campaign_invite_scope() -> Iterator[None]:
+    """Mark this call as a campaign invite.
+
+    Inside the scope, connecting without ``refuse_incoming=True`` raises.
+    The scope has no switch that turns the refusal off.
+    """
+    token = _campaign_invite.set(True)
+    try:
+        yield
+    finally:
+        _campaign_invite.reset(token)
+
+
+def require_campaign_refuse_incoming(refuse_incoming: object) -> None:
+    """Raise unless a campaign connect call refuses an incoming request."""
+    if refuse_incoming is not True:
+        raise CampaignInviteError(
+            "A campaign invite must pass refuse_incoming=True. "
+            "Accepting an incoming request is not a campaign action."
+        )
 
 
 @dataclass(frozen=True)

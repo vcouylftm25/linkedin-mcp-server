@@ -1,9 +1,10 @@
 """Campaign and lead state, with no browser, database, or framework imports.
 
-A lead that might already have been submitted is ``*_unconfirmed``. Nothing
-from that state is allowed to become sendable again: a resumed batch reconciles
-by reading what happened, and a path back to ``invite_approved`` or
-``message_approved`` would send the same invitation twice.
+A lead that might already have been submitted is ``*_unconfirmed``. The runner
+does not select it. Reconciliation may return an invite to ``invite_approved``
+only when a re-read positively confirms it was not sent. Any other reading
+leaves the lead unconfirmed, so a resumed batch cannot send the same
+invitation twice on a guess.
 """
 
 from __future__ import annotations
@@ -105,8 +106,12 @@ _ALLOWED: dict[LeadState, frozenset[LeadState]] = {
             LeadState.SKIPPED,
         }
     ),
+    # ``invite_approved`` is the one path back onto the queue. Only
+    # reconciliation may choose it, and only for a read that positively
+    # confirms the invitation was not sent.
     LeadState.INVITE_UNCONFIRMED: frozenset(
         {
+            LeadState.INVITE_APPROVED,
             LeadState.INVITED,
             LeadState.ACCEPTED,
             LeadState.ALREADY_CONNECTED,

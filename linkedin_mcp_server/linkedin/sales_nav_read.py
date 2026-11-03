@@ -144,16 +144,28 @@ def url_with_page(url: str, page: int) -> str:
     return urlunparse(parsed._replace(query=urlencode(pairs), fragment=""))
 
 
+# A Sales Navigator session id rides in the query. It is not a filter:
+# a landing that drops it is the same search, and treating the key as one
+# refuses that landing.
+_NON_FILTER_QUERY_KEYS = frozenset({"sessionId"})
+
+
 def missing_filter_keys(requested_url: str, landed_url: str) -> tuple[str, ...]:
     """Query keys of `requested_url` that `landed_url` does not carry.
 
     Presence only. LinkedIn re-encodes values, and a value comparison
     would fail on a search it actually kept. A missing key is a different
-    search.
+    search. ``sessionId`` is not a filter.
     """
     requested = parse_qs(urlparse(requested_url).query, keep_blank_values=True)
     landed = parse_qs(urlparse(landed_url).query, keep_blank_values=True)
-    return tuple(sorted(key for key in requested if key not in landed))
+    return tuple(
+        sorted(
+            key
+            for key in requested
+            if key not in landed and key not in _NON_FILTER_QUERY_KEYS
+        )
+    )
 
 
 def landed_on_requested_page(landed_url: str, page: int) -> bool:
