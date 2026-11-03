@@ -69,12 +69,13 @@ Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https
 
 Daily write caps default to 20 invitations and 40 messages per local day. Set
 `DAILY_INVITE_LIMIT` and `DAILY_MESSAGE_LIMIT`, or use `--daily-invite-limit`
-and `--daily-message-limit`; `0` disables that cap. Counter data lives in
-`$XDG_STATE_HOME/linkedin-mcp-server/prospecting.sqlite3` (or
-`~/.local/state/linkedin-mcp-server/prospecting.sqlite3`). Set
-`PROSPECTING_STATE_DIR` or `--prospecting-state-dir` to use another directory.
-The counter is separate from the browser profile. A rejected send does not
-open the browser; an uncertain send consumes a slot until the next local day.
+and `--daily-message-limit`; `0` disables that cap.
+Campaigns and counters share `prospecting.sqlite3` beside the browser session
+state. If `PROSPECTING_STATE_DIR` or `--prospecting-state-dir` is set, it must
+resolve to that same session-state directory. Campaign tools only edit local
+state; invitation and message execution is not wired in this phase. Daily
+invite, message, and profile-navigation caps are enforced with a weekly invite
+cap.
 | `get_company_profile` | Read company information, with optional sections for posts and open jobs. |
 | `get_company_posts` | Read recent posts from a company's feed, with links to the original posts. |
 | `search_companies` | Find companies by keyword and return links to their LinkedIn profiles. |
@@ -94,6 +95,10 @@ open the browser; an uncertain send consumes a slot until the next local day.
 | `search_posts` | Search posts by keyword, optionally filtered by recency or content type. |
 | `create_post` | Publish a text post with an optional local image; `dry_run=true` previews and discards it; the current audience is retained; returns `post_url` once published. |
 | `get_prospecting_limits` | Today's used and remaining invites and messages under the local daily caps; read-only. |
+| `create_campaign` | Create a local prospecting campaign; no LinkedIn page is opened. |
+| `add_leads` | Add vanity-based profile records to a campaign, with global deduplication. |
+| `preview_batch` / `approve_batch` | Preview and explicitly approve campaign items; the server issues approval tokens. |
+| `campaign_status` / `export_campaign` | Read campaign state or return CSV/JSON text without writing an export file. |
 | `get_session_status` | Check your saved login and browser state without opening a browser. |
 | `close_session` | Close the shared browser session without deleting your saved login. |
 

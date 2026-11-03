@@ -901,6 +901,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                     # answer as one caught at startup.
                     _exit_on_a_bad_setting(e)
 
+            # Validate the campaign database root before starting or attaching
+            # to any process that can open the browser profile.
+            from linkedin_mcp_server.prospecting.roots import prospecting_limits_for
+
+            limits = prospecting_limits_for(config)
+
             # Get a shared owner running before building this process's server.
             # It has to come first now: whether this process drives a browser or
             # forwards to one that does depends on the answer.
@@ -913,13 +919,6 @@ def main(argv: Sequence[str] | None = None) -> None:
             shared = _obtain_shared_owner(config)
 
             # Create and run the MCP server
-            from linkedin_mcp_server.prospecting_limits import ProspectingLimits
-
-            limits = ProspectingLimits(
-                config.server.daily_invite_limit,
-                config.server.daily_message_limit,
-                config.server.prospecting_state_dir,
-            )
             from linkedin_mcp_server.daemon.discovery import Unanswered
 
             if shared is None:

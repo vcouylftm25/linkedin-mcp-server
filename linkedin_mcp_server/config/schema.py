@@ -421,6 +421,8 @@ class ServerConfig:
     tool_timeout_seconds: float = DEFAULT_TOOL_TIMEOUT_SECONDS
     daily_invite_limit: int = 20
     daily_message_limit: int = 40
+    # Optional assertion/configuration for the local SQLite root. Startup
+    # refuses it unless it resolves to the browser session's auth root.
     prospecting_state_dir: str | None = None
     # Serve every stdio client from one browser-owning process instead of
     # giving each its own. Off while the supervision and liveness work is
