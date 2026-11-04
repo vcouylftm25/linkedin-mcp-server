@@ -69,9 +69,7 @@ def reconcile_unconfirmed(
             continue
         transition(lead.state, target)
         store.move_lead(lead, target)
-        changes.append(
-            Reconciliation(lead.lead_vanity, lead.kind, lead.state, target)
-        )
+        changes.append(Reconciliation(lead.lead_vanity, lead.kind, lead.state, target))
     return changes
 
 

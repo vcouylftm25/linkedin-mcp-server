@@ -67,7 +67,10 @@ def circuit_pause(result: ExecutionResult) -> PauseReason | None:
     """
     if throttled_count() > 0:
         return PauseReason.RATE_LIMITED
-    if _checkpoint_landing(result.landing_url) or result.outcome in _CHECKPOINT_OUTCOMES:
+    if (
+        _checkpoint_landing(result.landing_url)
+        or result.outcome in _CHECKPOINT_OUTCOMES
+    ):
         return PauseReason.CHECKPOINT
     if result.outcome in _NOTE_QUOTA_OUTCOMES:
         return PauseReason.NOTE_QUOTA
@@ -170,9 +173,7 @@ class CampaignRunner:
                 attempted += 1
                 try:
                     with (
-                        campaign_invite_scope()
-                        if action == "invite"
-                        else nullcontext()
+                        campaign_invite_scope() if action == "invite" else nullcontext()
                     ):
                         result = executor(item)
                 except AuthenticationError:

@@ -1132,6 +1132,8 @@ class TestForwardingToASharedOwner:
         from linkedin_mcp_server.server_role import ServerRole
 
         config = self._config(daemon_enabled=True)
+        profile = tmp_path / "profile"
+        config.browser.user_data_dir = str(profile)
         _patch_main_dependencies(monkeypatch, config)
         attachment = MagicMock(name="attachment")
         # A mock answers every attribute truthily, and a truthy `control_only`
@@ -1157,6 +1159,11 @@ class TestForwardingToASharedOwner:
 
         assert built["role"] is ServerRole.PROXY
         assert built["proxy_backend"].attachment is attachment
+        from linkedin_mcp_server.session_state import auth_root_dir
+
+        assert built["prospecting_limits"].path == (
+            auth_root_dir(profile) / "prospecting.sqlite3"
+        )
         # The owner's inbound credential must not be reused for the outbound hop.
         assert "auth_token" not in built
 

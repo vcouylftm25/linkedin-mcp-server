@@ -1,6 +1,7 @@
 """Daily write caps have a persistent, browser-free contract."""
 
 from datetime import datetime, timedelta
+import sqlite3
 from unittest.mock import patch
 
 import pytest
@@ -78,6 +79,58 @@ def test_report_treats_zero_as_unlimited(tmp_path):
     report = limits.report()
     assert report["invites"] == {"used": 1, "limit": 0, "remaining": None}
     assert report["messages"] == {"used": 1, "limit": 1, "remaining": 0}
+
+
+def test_report_and_reserve_count_unconfirmed_writes_from_other_days(
+    tmp_path, monkeypatch
+):
+    from linkedin_mcp_server.prospecting.domain import LeadState
+    from linkedin_mcp_server.prospecting.repository import ProspectingRepository
+
+    now = datetime(2026, 11, 3, 12, tzinfo=datetime.now().astimezone().tzinfo)
+    limits = ProspectingLimits(1, 1, str(tmp_path))
+    repo = ProspectingRepository(limits.path)
+    campaign = repo.create_campaign("campaign", now=now)
+    repo.add_leads(
+        campaign.id,
+        [
+            {
+                "lead_vanity": "alice-smith",
+                "profile_url": "https://www.linkedin.com/in/alice-smith/",
+                "name": "Alice",
+            }
+        ],
+        now=now,
+    )
+    token = "unconfirmed-invite"
+    with limits._open() as db:
+        db.execute(
+            "INSERT INTO writes(token, day, kind) VALUES (?, ?, ?)",
+            (token, "2026-11-02", "invite"),
+        )
+        db.execute(
+            "UPDATE leads SET state=?, write_token=? WHERE lead_vanity=?",
+            (LeadState.INVITE_UNCONFIRMED.value, token, "alice-smith"),
+        )
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz) if tz else now.replace(tzinfo=None)
+
+    monkeypatch.setattr("linkedin_mcp_server.prospecting_limits.datetime", Clock)
+    assert limits.report()["invites"] == {"used": 1, "limit": 1, "remaining": 0}
+    with limits._open() as db, pytest.raises(CodedToolError):
+        db.execute("BEGIN IMMEDIATE")
+        limits.insert_reservation(db, "invite", now)
+
+
+def test_report_does_not_turn_an_unreadable_database_into_zero_usage(tmp_path):
+    limits = ProspectingLimits(1, 1, str(tmp_path))
+    limits.path.parent.mkdir(parents=True, exist_ok=True)
+    limits.path.write_bytes(b"not a sqlite database")
+    with pytest.raises(sqlite3.DatabaseError):
+        limits.report()
 
 
 def test_sales_nav_navigations_have_a_separate_daily_cap(tmp_path):

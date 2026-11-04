@@ -18,7 +18,7 @@ a page-owning collaborator.
 | `__init__` | _(no public definitions)_ | `browser-free` |
 | `capture` | `CaptureMode`, `CapturePlan`, `OverlayRootNotFoundError`, `RATE_LIMIT_RETRY_DELAY`, `SectionCapture`, `capture_plan_for_url()` | `page-owning` |
 | `company` | `CompanyReader` | `browser-free` |
-| `connection` | `ActionSignals`, `ConnectionState`, `detect_connection_state()` | `browser-free` |
+| `connection` | `ActionSignals`, `CampaignInviteError`, `ConnectionState`, `campaign_invite_scope()`, `detect_connection_state()`, `require_campaign_refuse_incoming()` | `browser-free` |
 | `connection_actions` | `ACTION_SIGNALS_JS`, `CLICK_INCOMING_ACCEPT_JS`, `ConnectionActions`, `OPEN_MORE_BUTTON_JS`, `ReadMainProfile` | `page-owning` |
 | `content` | `PageContentReader` | `page-owning` |
 | `contracts` | `ExtractedSection`, `FilterValidationError`, `RATE_LIMITED_SECTION_TEXT`, `SEND_INTERRUPTED_WARNING`, `before_the_reply_deadline()`, `message_action_result()`, `normalize_message_text()`, `rate_limited_section_error()`, `refuse_an_invalid_message()` | `browser-free` |

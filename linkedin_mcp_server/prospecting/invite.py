@@ -9,7 +9,6 @@ direct call that omits the flag raises before it clicks.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any, Literal, Protocol
 
 

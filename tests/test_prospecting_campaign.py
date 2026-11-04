@@ -6,14 +6,13 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
 from linkedin_mcp_server.core.exceptions import AuthenticationError
 from linkedin_mcp_server.linkedin.connection import (
     CampaignInviteError,
-    _campaign_invite_active,
     campaign_invite_scope,
 )
 from linkedin_mcp_server.linkedin.connection_actions import ConnectionActions
@@ -37,7 +36,6 @@ from linkedin_mcp_server.prospecting.repository import (
 )
 from linkedin_mcp_server.prospecting.invite import perform_campaign_connect
 from linkedin_mcp_server.prospecting.reconcile import (
-    RepositoryStore,
     reconcile_unconfirmed,
     reconciled_state,
 )
@@ -396,12 +394,158 @@ def test_profile_lease_refuses_tick_during_interactive_session(tmp_path):
         lease.release()
 
 
+def test_tick_lease_can_be_reacquired_by_browser_in_same_process(tmp_path):
+    from linkedin_mcp_server.prospecting.runner import exclusive_profile_lease
+
+    lease = get_profile_lease(tmp_path / "profile")
+    with exclusive_profile_lease(tmp_path):
+        assert lease.held
+        assert lease.try_acquire()
+        lease.release()
+        assert lease.held
+    assert not lease.held
+
+
+def test_approve_batch_only_selects_the_requested_kind(tmp_path):
+    _limits, repo, campaign = _campaign(tmp_path)
+    repo.add_leads(
+        campaign.id,
+        [
+            {
+                "lead_vanity": "same-person",
+                "profile_url": "https://www.linkedin.com/in/same-person/",
+                "name": "Same Person",
+                "kind": "invite",
+            },
+            {
+                "lead_vanity": "same-person",
+                "profile_url": "https://www.linkedin.com/in/same-person/",
+                "name": "Same Person",
+                "kind": "message",
+            },
+        ],
+        now=NOW,
+    )
+    with repo._open() as db:
+        db.execute(
+            "UPDATE leads SET state=? WHERE lead_vanity=? AND kind=?",
+            (LeadState.MESSAGE_DRAFTED.value, "same-person", "message"),
+        )
+    repo.approve_batch(
+        campaign.id,
+        "message",
+        [{"lead_vanity": "same-person", "text": "Hello"}],
+        now=NOW,
+    )
+    assert repo.get_lead("same-person", "message").state is LeadState.MESSAGE_APPROVED
+    assert repo.get_lead("same-person", "invite").state is LeadState.IMPORTED
+
+
+@pytest.mark.parametrize(
+    ("reading", "expected"),
+    [
+        ("pending", LeadState.INVITED),
+        ("already_connected", LeadState.ACCEPTED),
+        ("connectable", LeadState.INVITE_APPROVED),
+        ("incoming_request", LeadState.INVITE_UNCONFIRMED),
+        ("unavailable", LeadState.INVITE_UNCONFIRMED),
+        (None, LeadState.INVITE_UNCONFIRMED),
+    ],
+)
+def test_reconciliation_uses_only_positive_connection_evidence(reading, expected):
+    assert reconciled_state(LeadState.INVITE_UNCONFIRMED, reading) is expected
+
+
+def test_reconcile_unconfirmed_reads_each_lead_through_injected_reader():
+    lead = Lead(
+        lead_vanity="alice-smith",
+        kind="invite",
+        campaign_id="campaign",
+        lead_urn=None,
+        profile_url="https://www.linkedin.com/in/alice-smith/",
+        name="Alice Smith",
+        title=None,
+        company=None,
+        state=LeadState.INVITE_UNCONFIRMED,
+        updated_at=NOW,
+    )
+
+    class Store:
+        def __init__(self):
+            self.leads = [lead]
+            self.moves = []
+
+        def unconfirmed_leads(self):
+            return self.leads
+
+        def move_lead(self, current, new_state):
+            self.moves.append((current, new_state))
+
+    store = Store()
+    reads = []
+
+    def reader(current):
+        reads.append(current)
+        return "connectable"
+
+    changes = reconcile_unconfirmed(store, reader)
+    assert reads == [lead]
+    assert store.moves == [(lead, LeadState.INVITE_APPROVED)]
+    assert [(change.before, change.after) for change in changes] == [
+        (LeadState.INVITE_UNCONFIRMED, LeadState.INVITE_APPROVED)
+    ]
+
+
+async def test_campaign_connect_guard_requires_refusing_incoming_requests():
+    called = []
+
+    def connect(_username, **kwargs):
+        called.append(kwargs)
+        return "ok"
+
+    assert perform_campaign_connect(connect, "alice-smith") == "ok"
+    assert called[-1]["refuse_incoming"] is True
+    with campaign_invite_scope(), pytest.raises(CampaignInviteError):
+        await ConnectionActions.connect_with_person(
+            object.__new__(ConnectionActions), "alice-smith"
+        )
+
+
+def test_campaign_connect_contract_passes_required_true_flag():
+    received = {}
+
+    def connect(username, *, note=None, dry_run=False, refuse_incoming):
+        received.update(username=username, note=note, dry_run=dry_run)
+        received["refuse_incoming"] = refuse_incoming
+        return "connected"
+
+    assert perform_campaign_connect(connect, "alice-smith") == "connected"
+    assert received == {
+        "username": "alice-smith",
+        "note": None,
+        "dry_run": False,
+        "refuse_incoming": True,
+    }
+
+
 def test_configured_campaign_root_must_match_session_root(tmp_path):
     session = tmp_path / "auth"
     alternate = tmp_path / "elsewhere"
     with pytest.raises(ProspectingRootError):
         resolve_prospecting_root(session, str(alternate))
     assert resolve_prospecting_root(session, str(session)) == session.resolve()
+
+
+def test_daemon_owner_rejects_a_second_prospecting_database(tmp_path):
+    from linkedin_mcp_server.config.schema import AppConfig
+    from linkedin_mcp_server.daemon.owner import create_owner_server
+    from linkedin_mcp_server.prospecting.roots import ProspectingRootError
+
+    config = AppConfig()
+    config.browser.user_data_dir = str(tmp_path / "profile")
+    config.server.prospecting_state_dir = str(tmp_path / "other-state")
+    with pytest.raises(ProspectingRootError):
+        create_owner_server(config=config, token="token", host="127.0.0.1", port=0)
 
 
 async def test_campaign_tools_are_registered_without_any_executor(tmp_path):
