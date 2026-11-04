@@ -1,0 +1,125 @@
+{
+  "call": {
+    "arguments": {
+      "filters": {
+        "keywords": "São Paulo, CFO"
+      }
+    },
+    "method": "sales_nav_search_leads_by_filters"
+  },
+  "events": [
+    {
+      "call": "sales_nav_search_leads_by_filters",
+      "kind": "sleep",
+      "reason": "sleep",
+      "seconds": 2.0
+    },
+    {
+      "call": "sales_nav_search_leads_by_filters",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.add"
+    },
+    {
+      "call": "sales_nav_search_leads_by_filters",
+      "extra": {
+        "target_url": "https://www.linkedin.com/sales/search/people?query=%28filters%3AList%28%29%2Ckeywords%3AS%C3%A3o%20Paulo%5C%2C%20CFO%29",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-before-goto"
+    },
+    {
+      "call": "sales_nav_search_leads_by_filters",
+      "kind": "navigate",
+      "landed_url": "https://www.linkedin.com/sales/search/people?query=%28filters%3AList%28%29%2Ckeywords%3AS%C3%A3o%5C%2CPaulo%5C%2C%20CFO%29",
+      "requested_url": "https://www.linkedin.com/sales/search/people?query=%28filters%3AList%28%29%2Ckeywords%3AS%C3%A3o%20Paulo%5C%2C%20CFO%29",
+      "timeout_ms": 30000,
+      "wait_until": "domcontentloaded"
+    },
+    {
+      "call": "sales_nav_search_leads_by_filters",
+      "description": "goto https://www.linkedin.com/sales/search/people?query=%28filters%3AList%28%29%2Ckeywords%3AS%C3%A3o%20Paulo%5C%2C%20CFO%29",
+      "kind": "boundary.stabilize",
+      "result": null
+    },
+    {
+      "call": "sales_nav_search_leads_by_filters",
+      "extra": {
+        "target_url": "https://www.linkedin.com/sales/search/people?query=%28filters%3AList%28%29%2Ckeywords%3AS%C3%A3o%20Paulo%5C%2C%20CFO%29",
+        "wait_until": "domcontentloaded"
+      },
+      "kind": "boundary.trace",
+      "label": "extractor-after-goto"
+    },
+    {
+      "call": "sales_nav_search_leads_by_filters",
+      "kind": "boundary.auth_quick",
+      "result": null
+    },
+    {
+      "call": "sales_nav_search_leads_by_filters",
+      "callback_id": "callback-1",
+      "event": "framenavigated",
+      "kind": "listener.remove"
+    },
+    {
+      "call": "sales_nav_search_leads_by_filters",
+      "kind": "boundary.rate_limit"
+    },
+    {
+      "call": "sales_nav_search_leads_by_filters",
+      "kind": "wait_for_selector",
+      "operation": "main",
+      "selector": "main",
+      "state": "visible",
+      "timeout_ms": null
+    },
+    {
+      "call": "sales_nav_search_leads_by_filters",
+      "dismissed": false,
+      "kind": "boundary.modal"
+    },
+    {
+      "actual_scrolls": 2,
+      "call": "sales_nav_search_leads_by_filters",
+      "kind": "boundary.scroll_body",
+      "max_scrolls": 0,
+      "pause_time": 0.5
+    },
+    {
+      "arg": {
+        "selectors": [
+          "main"
+        ]
+      },
+      "call": "sales_nav_search_leads_by_filters",
+      "kind": "evaluate",
+      "operation": "root_content",
+      "program_digest": "e6b2be4ebddd"
+    },
+    {
+      "call": "sales_nav_search_leads_by_filters",
+      "kind": "evaluate",
+      "operation": "sales_nav_result_cards",
+      "program_digest": "b038ea6e961b"
+    }
+  ],
+  "result": {
+    "pagination": {
+      "next_offset": null,
+      "pages_fetched": 1,
+      "reason": "complete",
+      "result_kind": "leads"
+    },
+    "section_names": [
+      "search_results"
+    ],
+    "sections": {
+      "search_results": "Result content"
+    },
+    "url": "https://www.linkedin.com/sales/search/people?query=%28filters%3AList%28%29%2Ckeywords%3AS%C3%A3o%20Paulo%5C%2C%20CFO%29"
+  },
+  "scenario": "sales_nav_search_leads_by_filters__baseline",
+  "schema_version": 1
+}

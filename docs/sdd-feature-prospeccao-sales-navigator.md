@@ -83,6 +83,8 @@ Camadas: domínio puro (`prospecting/domain.py`: estados e transições), reposi
 
 **Contratos centrais:**
 
+A busca estruturada inicial é `sales_nav_search_leads_by_filters`, somente leitura, com construção Rest.li e reuso do `SalesNavigatorReader`. O catálogo versionado começa vazio enquanto não houver fontes citáveis para IDs; rótulos desconhecidos e sinais sem ID medido falham fechados. A URL final é conferida também nos filtros aninhados em `query`, não apenas pela presença do parâmetro externo.
+
 ```json
 // sales_nav_search_leads (entrada)
 {"filters": {"titles": ["CFO", "Diretor Financeiro"], "seniority": ["CXO", "Director"],

@@ -21,6 +21,10 @@ from linkedin_mcp_server.linkedin.sales_nav_read import (
     require_max_pages,
     url_with_page,
 )
+from linkedin_mcp_server.linkedin.sales_nav_filters import (
+    SalesNavFilters,
+    build_sales_nav_search_url,
+)
 from linkedin_mcp_server.linkedin.session import NAV_DELAY, PageSession
 
 SALES_NAV_HOME_URL = "https://www.linkedin.com/sales/home"
@@ -157,6 +161,18 @@ class SalesNavigatorReader:
             "leads",
             max_pages=_checked_max_pages(max_pages),
             charge=charge,
+        )
+
+    async def search_leads_by_filters(
+        self,
+        filters: SalesNavFilters,
+        *,
+        max_pages: int = 1,
+        charge: NavigationCharge | None = None,
+    ) -> dict[str, Any]:
+        """Build a structured search URL, then use the standard checked reader."""
+        return await self.search_leads(
+            build_sales_nav_search_url(filters), max_pages=max_pages, charge=charge
         )
 
     async def search_accounts(

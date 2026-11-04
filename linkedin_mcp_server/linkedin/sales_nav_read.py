@@ -9,7 +9,7 @@ follow the interface language.
 from __future__ import annotations
 
 from typing import Literal
-from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 from linkedin_mcp_server.linkedin.link_metadata import classify_link
 
@@ -159,13 +159,45 @@ def missing_filter_keys(requested_url: str, landed_url: str) -> tuple[str, ...]:
     """
     requested = parse_qs(urlparse(requested_url).query, keep_blank_values=True)
     landed = parse_qs(urlparse(landed_url).query, keep_blank_values=True)
-    return tuple(
-        sorted(
-            key
-            for key in requested
-            if key not in landed and key not in _NON_FILTER_QUERY_KEYS
-        )
-    )
+    missing = {
+        key
+        for key in requested
+        if key not in landed and key not in _NON_FILTER_QUERY_KEYS
+    }
+    # Sales Navigator nests every structured filter in the single `query`
+    # parameter. Presence of that outer key alone does not prove the filters
+    # survived; compare the exact requested IDs after Rest.li decoding.
+    requested_query = _restli_query(requested.get("query", [""])[0])
+    landed_query = _restli_query(landed.get("query", [""])[0])
+    for filter_type, ids in requested_query.items():
+        missing_ids = ids - landed_query.get(filter_type, set())
+        if missing_ids:
+            missing.update(f"{filter_type}:{item}" for item in missing_ids)
+    return tuple(sorted(missing))
+
+
+def _restli_query(value: str) -> dict[str, set[str]]:
+    """Read filter type and IDs from a decoded Sales Navigator Rest.li query."""
+    value = unquote(value)
+    result: dict[str, set[str]] = {}
+    marker = "filters:List(("
+    start = value.find(marker)
+    if start < 0:
+        return result
+    body = value[start + len(marker) :]
+    for item in body.split("),(type:"):
+        filter_type = item.split(",values:List((", 1)[0].removeprefix("type:")
+        values_at = item.find(",values:List((")
+        if values_at < 0:
+            continue
+        values = item[values_at + len(",values:List((") :]
+        ids = set()
+        for value_part in values.split("),(id:"):
+            if value_part.startswith("id:"):
+                ids.add(value_part[3:].split(",", 1)[0].split(")", 1)[0])
+        if filter_type and ids:
+            result.setdefault(filter_type, set()).update(ids)
+    return result
 
 
 def landed_on_requested_page(landed_url: str, page: int) -> bool:

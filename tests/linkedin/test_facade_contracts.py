@@ -67,6 +67,7 @@ TOOL_DELEGATES = {
     "search_posts": "search_posts",
     "sales_nav_status": "sales_nav_status",
     "sales_nav_search_leads": "sales_nav_search_leads",
+    "sales_nav_search_leads_by_filters": "sales_nav_search_leads_by_filters",
     "sales_nav_search_accounts": "sales_nav_search_accounts",
     "sales_nav_list_leads": "sales_nav_list_leads",
     "create_post": "create_post",

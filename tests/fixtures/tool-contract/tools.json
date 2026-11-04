@@ -1152,6 +1152,47 @@
     "title": "Search Sales Navigator Leads"
   },
   {
+    "name": "sales_nav_search_leads_by_filters",
+    "title": "Search Sales Navigator Leads by Filters",
+    "description": "Search for leads with structured filters instead of a pasted URL.\n\nFilter labels must exist in the versioned catalog. Geography can also\nuse raw geography_ids while its localized resolver awaits live validation.\nOnly verified catalog values can be used; unknown values fail closed.",
+    "inputSchema": {
+      "properties": {
+        "filters": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "max_results": {
+          "default": 15,
+          "maximum": 45,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "filters"
+      ],
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "fastmcp": {
+        "tags": [
+          "prospecting",
+          "sales_navigator",
+          "search"
+        ]
+      }
+    }
+  },
+  {
     "_meta": {
       "fastmcp": {
         "tags": [
