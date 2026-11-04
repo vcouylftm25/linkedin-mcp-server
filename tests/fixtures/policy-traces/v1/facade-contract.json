@@ -100,6 +100,10 @@
         "coroutine": true,
         "signature": "(self, search_url: 'str', *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'"
       },
+      "sales_nav_search_leads_by_filters": {
+        "coroutine": true,
+        "signature": "(self, filters: 'SalesNavFilters', *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'"
+      },
       "sales_nav_status": {
         "coroutine": true,
         "signature": "(self, *, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'"
@@ -150,6 +154,7 @@
       "sales_nav_list_leads",
       "sales_nav_search_accounts",
       "sales_nav_search_leads",
+      "sales_nav_search_leads_by_filters",
       "sales_nav_status",
       "search_companies",
       "search_conversations",
@@ -885,6 +890,31 @@
           },
           "required": [
             "search_url"
+          ],
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_search_leads_by_filters": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "filters": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "max_results": {
+              "default": 15,
+              "maximum": 45,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "filters"
           ],
           "type": "object"
         },

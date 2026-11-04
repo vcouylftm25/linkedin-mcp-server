@@ -30,6 +30,7 @@ from linkedin_mcp_server.linkedin.post_publisher import PostPublisher
 from linkedin_mcp_server.linkedin.profile_page import ProfilePageReader
 from linkedin_mcp_server.linkedin.session import PageSession
 from linkedin_mcp_server.linkedin.sales_navigator import SalesNavigatorReader
+from linkedin_mcp_server.linkedin.sales_nav_filters import SalesNavFilters
 from linkedin_mcp_server.linkedin.text import (
     strip_conversation_chrome as strip_conversation_chrome,
     strip_linkedin_noise as strip_linkedin_noise,
@@ -91,6 +92,18 @@ class LinkedInExtractor:
         """Read Sales Navigator lead results, one navigation per page."""
         return await self._sales_navigator.search_leads(
             search_url, max_pages=max_pages, charge=charge
+        )
+
+    async def sales_nav_search_leads_by_filters(
+        self,
+        filters: SalesNavFilters,
+        *,
+        max_pages: int = 1,
+        charge: Callable[[str], object] | None = None,
+    ) -> dict[str, Any]:
+        """Read Sales Navigator leads from structured filter input."""
+        return await self._sales_navigator.search_leads_by_filters(
+            filters, max_pages=max_pages, charge=charge
         )
 
     async def sales_nav_search_accounts(

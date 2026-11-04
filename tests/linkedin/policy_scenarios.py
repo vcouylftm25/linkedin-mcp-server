@@ -27,6 +27,7 @@ from linkedin_mcp_server.linkedin import person as person_module
 from linkedin_mcp_server.linkedin import session as session_module
 from linkedin_mcp_server.linkedin import LinkedInExtractor
 from linkedin_mcp_server.linkedin.fields import COMPANY_SECTIONS, PERSON_SECTIONS
+from linkedin_mcp_server.linkedin.sales_nav_filters import SalesNavFilters
 from linkedin_mcp_server.server import create_mcp_server
 
 from .support.policy_trace import (
@@ -891,7 +892,11 @@ async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
     # facades accept any text.
     text = "About the job\nResult content" if method == "read_job" else "Result content"
     page = _page(recorder).script("evaluate:root_content", _root(text))
-    if method in {"sales_nav_search_leads", "sales_nav_list_leads"}:
+    if method in {
+        "sales_nav_search_leads",
+        "sales_nav_search_leads_by_filters",
+        "sales_nav_list_leads",
+    }:
         page.script("evaluate:sales_nav_result_cards", [])
     extractor = _extractor(page)
     arguments: dict[str, Any]
@@ -922,6 +927,14 @@ async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
                 }
                 page.goto_landings.append(arguments["search_url"])
                 result = await extractor.sales_nav_search_leads(**arguments)
+            elif method == "sales_nav_search_leads_by_filters":
+                arguments = {"filters": {"keywords": "São Paulo, CFO"}}
+                page.goto_landings.append(
+                    "https://www.linkedin.com/sales/search/people?query=%28filters%3AList%28%29%2Ckeywords%3AS%C3%A3o%5C%2CPaulo%5C%2C%20CFO%29"
+                )
+                result = await extractor.sales_nav_search_leads_by_filters(
+                    SalesNavFilters(**arguments["filters"])
+                )
             elif method == "sales_nav_search_accounts":
                 arguments = {
                     "search_url": "https://www.linkedin.com/sales/search/company?query=accounts"
@@ -1277,6 +1290,7 @@ TOOL_FACADE_METHODS = {
     "search_posts",
     "sales_nav_status",
     "sales_nav_search_leads",
+    "sales_nav_search_leads_by_filters",
     "sales_nav_search_accounts",
     "sales_nav_list_leads",
     "send_message",
@@ -1292,6 +1306,7 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         for method in (
             "sales_nav_status",
             "sales_nav_search_leads",
+            "sales_nav_search_leads_by_filters",
             "sales_nav_search_accounts",
             "sales_nav_list_leads",
         )
