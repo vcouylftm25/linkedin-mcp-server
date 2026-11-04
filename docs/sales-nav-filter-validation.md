@@ -7,7 +7,7 @@ builder; do not open the generated link from this checklist.
 ## Before the session
 
 - Confirm the banker has Sales Navigator open and can run a people search.
-- Keep the public sources used for any proposed catalog IDs at hand.
+- Have this checklist and the builder output for each planned search at hand.
 - Use a local, synthetic `sales_nav_search_leads_by_filters` call first. It
   returns an explicit catalog error when a requested label is not yet known.
 
@@ -29,12 +29,12 @@ builder; do not open the generated link from this checklist.
    The read tool independently fails if a requested filter type or ID is
    absent from the landed URL.
 5. **8–10 min — Review catalog candidates.** Add an entry only when the exact
-   filter type and ID are confirmed by the captured UI URL and a public source
-   documents the taxonomy/code. Keep `verified: false`, add the source URL and
-   access date, and have the banker rerun the same search before a maintainer
-   separately changes it to `verified: true`. A UI-only observation is
-   measurement evidence, not a public citation; it may be recorded in a
-   measurement note but does not satisfy the catalog's source requirement.
+   filter type and ID are confirmed by the captured UI URL. Record `source` as
+   `measured:<date>` (account identifiers removed). Set `verified: true` only
+   after the banker reruns the same search and the builder's URL lands on the
+   same result count shown in the UI. A public source may be added as extra
+   context but is not required: a URL captured from the live UI is the stronger
+   evidence.
 
 ## Candidate comparison record
 
