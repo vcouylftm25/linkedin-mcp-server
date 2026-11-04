@@ -607,7 +607,7 @@ class ProspectingRepository:
                     limits.release_in(db, token)
                 db.execute(
                     """
-                    UPDATE leads SET navigation_token=NULL, write_token=NULL
+                    UPDATE leads SET write_token=NULL
                     WHERE lead_vanity=? AND kind=?
                     """,
                     (item.lead_vanity, item.lead_kind),

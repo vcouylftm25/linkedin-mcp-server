@@ -359,7 +359,9 @@ def test_unknown_and_failed_outcomes_cannot_be_released(tmp_path):
     assert limits.report()["weekly_invites"]["used"] == 2
 
 
-def test_non_submission_releases_write_slot_but_keeps_profile_visit(tmp_path):
+def test_non_submission_releases_write_slot_but_keeps_profile_visit(
+    tmp_path, monkeypatch
+):
     limits, repo, campaign = _campaign(tmp_path)
     _approved(repo, campaign.id)
     runner = CampaignRunner(repo, limits, auth_root=tmp_path, clock=lambda: NOW)
@@ -370,9 +372,22 @@ def test_non_submission_releases_write_slot_but_keeps_profile_visit(tmp_path):
             LeadState.ALREADY_CONNECTED, "not_submitted", False
         ),
     )
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+
+    monkeypatch.setattr("linkedin_mcp_server.prospecting_limits.datetime", Clock)
     counts = limits.report()
     assert counts["invites"]["used"] == 0
     assert counts["navigations"]["used"] == 1
+    with repo._open() as db:
+        navigation_token = db.execute(
+            "SELECT navigation_token FROM leads WHERE lead_vanity=?",
+            ("alice-smith",),
+        ).fetchone()[0]
+        assert navigation_token is not None
 
 
 def test_profile_lease_refuses_tick_during_interactive_session(tmp_path):
