@@ -460,9 +460,7 @@ def register_messaging_tools(
         if refusal is not None:
             return refusal
         token = (
-            limits.reserve("message")
-            if limits is not None and confirm_send
-            else None
+            limits.reserve("message") if limits is not None and confirm_send else None
         )
         try:
             extractor = await get_ready_extractor(
