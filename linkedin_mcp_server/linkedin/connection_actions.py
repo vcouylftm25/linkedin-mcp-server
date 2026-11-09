@@ -46,6 +46,7 @@ from linkedin_mcp_server.linkedin.identifiers import (
 )
 from linkedin_mcp_server.linkedin.navigation import PageNavigator
 from linkedin_mcp_server.linkedin.session import PageSession
+from linkedin_mcp_server.linkedin.write_attempt import mark_write_attempt
 
 logger = logging.getLogger(__name__)
 
@@ -344,6 +345,7 @@ class ConnectionActions:
             async with linkedin_element(
                 buttons.nth(count - 1), timeout=timeout
             ) as button:
+                mark_write_attempt()
                 await button.click(timeout=timeout)
             return True
         except OffLinkedInLandingError:
@@ -500,12 +502,24 @@ class ConnectionActions:
         mitigations. Returns True iff the click landed.
         """
         try:
-            return bool(await self._session.run_on_linkedin(CLICK_INCOMING_ACCEPT_JS))
+            clicked = bool(
+                await self._session.run_on_linkedin(CLICK_INCOMING_ACCEPT_JS)
+            )
         except OffLinkedInLandingError:
+            # The page can move after the click handler dispatches.
+            mark_write_attempt()
             raise
         except Exception:
+            # An evaluation failure does not say whether its click dispatched.
+            mark_write_attempt()
             logger.debug("Incoming accept click via JS failed", exc_info=True)
             return False
+        except BaseException:
+            mark_write_attempt()
+            raise
+        if clicked:
+            mark_write_attempt()
+        return clicked
 
     async def _read_action_signals(self, username: str) -> ActionSignals:
         """Read locale-independent structural signals for a profile's
@@ -541,7 +555,10 @@ class ConnectionActions:
         )
 
     async def _submit_invite_dialog(
-        self, note: str | None, *, dry_run: bool = False
+        self,
+        note: str | None,
+        *,
+        dry_run: bool = False,
     ) -> tuple[bool, bool, str | None]:
         """Submit the invite dialog opened by the custom-invite deeplink.
 
@@ -664,6 +681,7 @@ class ConnectionActions:
                     # Through the handle, so Enter lands on this button in
                     # this document rather than on whatever holds focus.
                     async with linkedin_element(buttons.nth(btn_count - 1)) as button:
+                        mark_write_attempt()
                         await button.press("Enter")
                     sent = not await self._dialog_is_open(timeout=2000)
                 except OffLinkedInLandingError:

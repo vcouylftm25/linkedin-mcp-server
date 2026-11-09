@@ -27,6 +27,7 @@ from linkedin_mcp_server.linkedin.identifiers import (
     normalize_profile_urn,
     normalize_thread_id,
 )
+from linkedin_mcp_server.linkedin.write_attempt import WriteAttempt, track_write_attempt
 from linkedin_mcp_server.prospecting_limits import ProspectingLimits
 
 logger = logging.getLogger(__name__)
@@ -348,6 +349,7 @@ def register_messaging_tools(
             if limits is not None and confirm_send and not dry_run
             else None
         )
+        write_attempt = WriteAttempt()
         try:
             extractor = await get_ready_extractor(ctx, tool_name="send_message")
         except BaseException:
@@ -360,21 +362,21 @@ def register_messaging_tools(
             confirm_send,
         )
 
-        await ctx.report_progress(progress=0, total=100, message="Sending message")
-
-        result = await extractor.send_message(
-            linkedin_username,
-            message,
-            confirm_send=confirm_send,
-            profile_urn=profile_urn,
-            dry_run=dry_run,
-        )
-        if (
-            token is not None
-            and limits is not None
-            and result.get("status") != "sent"
-            and result.get("retry_safe") is not False
-        ):
+        try:
+            await ctx.report_progress(progress=0, total=100, message="Sending message")
+            with track_write_attempt(write_attempt):
+                result = await extractor.send_message(
+                    linkedin_username,
+                    message,
+                    confirm_send=confirm_send,
+                    profile_urn=profile_urn,
+                    dry_run=dry_run,
+                )
+        except BaseException:
+            if token is not None and limits is not None and not write_attempt.attempted:
+                limits.release(token)
+            raise
+        if token is not None and limits is not None and not write_attempt.attempted:
             limits.release(token)
 
         try:
@@ -462,6 +464,7 @@ def register_messaging_tools(
         token = (
             limits.reserve("message") if limits is not None and confirm_send else None
         )
+        write_attempt = WriteAttempt()
         try:
             extractor = await get_ready_extractor(
                 ctx, tool_name="reply_to_conversation"
@@ -472,19 +475,19 @@ def register_messaging_tools(
             raise
         logger.info("Replying in thread %s (confirm_send=%s)", thread_id, confirm_send)
 
-        await ctx.report_progress(progress=0, total=100, message="Sending reply")
-
-        result = await extractor.reply_to_conversation(
-            thread_id,
-            message,
-            confirm_send=confirm_send,
-        )
-        if (
-            token is not None
-            and limits is not None
-            and result.get("status") != "sent"
-            and result.get("retry_safe") is not False
-        ):
+        try:
+            await ctx.report_progress(progress=0, total=100, message="Sending reply")
+            with track_write_attempt(write_attempt):
+                result = await extractor.reply_to_conversation(
+                    thread_id,
+                    message,
+                    confirm_send=confirm_send,
+                )
+        except BaseException:
+            if token is not None and limits is not None and not write_attempt.attempted:
+                limits.release(token)
+            raise
+        if token is not None and limits is not None and not write_attempt.attempted:
             limits.release(token)
 
         try:

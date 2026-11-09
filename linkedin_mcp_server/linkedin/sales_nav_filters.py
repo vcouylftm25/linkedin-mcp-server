@@ -38,6 +38,11 @@ FILTER_FIELDS = {
 }
 
 
+def normalize_filter_label(label: str) -> str:
+    """Collapse whitespace and case for filter label comparisons."""
+    return " ".join(label.split()).casefold()
+
+
 class SalesNavFilterError(ValueError):
     """A filter cannot be represented without guessing its LinkedIn ID."""
 
@@ -61,8 +66,11 @@ class Catalog:
             entry
             for entry in self.entries
             if entry["filter_type"] == filter_type
-            and label.casefold()
-            in (entry["label_pt"].casefold(), entry["label_en"].casefold())
+            and normalize_filter_label(label)
+            in (
+                normalize_filter_label(entry["label_pt"]),
+                normalize_filter_label(entry["label_en"]),
+            )
         ]
         if len(matches) == 1:
             return matches[0]

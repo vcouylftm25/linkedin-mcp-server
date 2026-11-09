@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sqlite3
@@ -10,7 +9,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 from linkedin_mcp_server.linkedin.sales_nav_read import SALES_NAV_NAVIGATION_KIND
-from linkedin_mcp_server.linkedin.sales_nav_filters import Catalog, FILTER_FIELDS
+from linkedin_mcp_server.linkedin.sales_nav_filters import (
+    Catalog,
+    FILTER_FIELDS,
+    normalize_filter_label,
+)
 from linkedin_mcp_server.linkedin.session import PageSession
 
 CACHE_TTL = timedelta(days=30)
@@ -28,21 +31,19 @@ FILTER_UI_LABELS = {
 }
 
 
-def normalize_filter_label(label: str) -> str:
-    """Normalize whitespace and case for cache keys and exact matching."""
-    return " ".join(label.split()).casefold()
-
-
 def candidate_result(
     filter_type: str, requested: str, candidates: list[dict[str, str]]
 ) -> dict[str, Any]:
     """Resolve only an exact unique label; return all plausible matches otherwise."""
     wanted = normalize_filter_label(requested)
     plausible = [
-        {"filter_type": filter_type, "id": item["id"], "label": item["label"]}
+        {
+            "filter_type": filter_type,
+            "id": item.get("id", ""),
+            "label": item["label"],
+        }
         for item in candidates
-        if item.get("id")
-        and item.get("label")
+        if item.get("label")
         and (
             wanted in normalize_filter_label(item["label"])
             or normalize_filter_label(item["label"]) in wanted
@@ -54,21 +55,32 @@ def candidate_result(
         # discarding labels whose wording differs (for example, "500+" vs a
         # displayed employee range).
         plausible = [
-            {"filter_type": filter_type, "id": item["id"], "label": item["label"]}
+            {
+                "filter_type": filter_type,
+                "id": item.get("id", ""),
+                "label": item["label"],
+            }
             for item in candidates
             if item.get("id") and item.get("label")
         ]
     exact = [c for c in plausible if normalize_filter_label(c["label"]) == wanted]
+    exact_with_ids = [c for c in exact if c.get("id")]
+    if len(exact) == 1 and len(exact_with_ids) == 1:
+        status = "resolved"
+    elif len(exact) > 1 and any(candidate.get("id") for candidate in exact):
+        status = "ambiguous"
+    elif not exact and any(candidate.get("id") for candidate in plausible):
+        status = "ambiguous"
+    elif plausible:
+        status = "unresolved"
+    else:
+        status = "not_found"
     return {
         "filter_type": filter_type,
         "query": requested,
-        "status": "resolved"
-        if len(exact) == 1
-        else "ambiguous"
-        if plausible
-        else "not_found",
-        "resolved": exact[0] if len(exact) == 1 else None,
-        "candidates": exact if len(exact) == 1 else plausible,
+        "status": status,
+        "resolved": exact_with_ids[0] if status == "resolved" else None,
+        "candidates": exact_with_ids if status == "resolved" else plausible,
     }
 
 
@@ -135,8 +147,8 @@ class SalesNavFilterCache:
             )
 
 
-# The page reads only rendered options. IDs come from attributes on those
-# options; no Sales Navigator endpoint is called by this adapter.
+# The page reads rendered options. It uses IDs on DOM attributes when present;
+# otherwise it selects one exact visible suggestion and reads its resulting URL.
 _RESOLVE_UI_JS = r"""async (requests) => {
   const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
   const allText = (node) => clean(node.innerText || node.textContent);
@@ -159,11 +171,20 @@ _RESOLVE_UI_JS = r"""async (requests) => {
     input.value = request.query;
     input.dispatchEvent(new Event('input', {bubbles: true}));
     await new Promise(resolve => setTimeout(resolve, 150));
-    const candidates = [...document.querySelectorAll('[role=option]')].map(node => ({
+    const nodes = [...document.querySelectorAll('[role=option]')].filter(node => allText(node));
+    const candidates = nodes.map(node => ({
       id: node.getAttribute('data-id') || node.getAttribute('data-urn') || node.getAttribute('data-value') || node.getAttribute('value') || '',
       label: allText(node)
-    })).filter(item => item.label);
-    options.push({filter_type: request.filter_type, query: request.query, candidates});
+    }));
+    let url = '';
+    const normalize = value => clean(value).toLocaleLowerCase();
+    const exact = candidates.filter(item => normalize(item.label) === normalize(request.query));
+    if (exact.length === 1 && !exact[0].id) {
+      nodes[candidates.indexOf(exact[0])].click();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      url = window.location.href;
+    }
+    options.push({filter_type: request.filter_type, query: request.query, candidates, url});
     input.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
   }
   return {locale: document.documentElement.lang || 'und', options};
@@ -245,12 +266,14 @@ class SalesNavFilterResolver:
         if pending:
             if not did_navigate:
                 await self._navigate(charge)
-            raw, payloads = await self._read_ui(pending)
+            raw = await self._read_ui(pending)
             locale = str(raw.get("locale") or locale).casefold()
             for item in raw.get("options", []):
-                item["candidates"] = _prefer_response_candidates(
-                    item.get("candidates", []), payloads
-                )
+                url_candidate = _candidate_from_url(item.get("url", ""), item)
+                if url_candidate is not None and not any(
+                    candidate.get("id") for candidate in item.get("candidates", [])
+                ):
+                    item["candidates"] = [url_candidate]
                 result = candidate_result(
                     item["filter_type"], item["query"], item["candidates"]
                 )
@@ -286,42 +309,9 @@ class SalesNavFilterResolver:
                 results.append(result)
         return {"locale": locale, "results": results}
 
-    async def _read_ui(
-        self, pending: list[dict[str, Any]]
-    ) -> tuple[dict[str, Any], list[Any]]:
-        """Prefer IDs in JSON the page fetched itself, with rendered DOM fallback."""
-        page = getattr(self.session, "page", None)
-        on = getattr(page, "on", None)
-        remove_listener = getattr(page, "remove_listener", None)
-        if not callable(on) or not callable(remove_listener):
-            return await self.session.run_on_linkedin(_RESOLVE_UI_JS, pending), []
-
-        payloads: list[Any] = []
-        tasks: set[asyncio.Task] = set()
-
-        def on_response(response: Any) -> None:
-            headers = getattr(response, "headers", {}) or {}
-            if "json" not in str(headers.get("content-type", "")).casefold():
-                return
-
-            async def read_json() -> None:
-                try:
-                    payloads.append(await response.json())
-                except Exception:
-                    return
-
-            task = asyncio.create_task(read_json())
-            tasks.add(task)
-            task.add_done_callback(tasks.discard)
-
-        on("response", on_response)
-        try:
-            raw = await self.session.run_on_linkedin(_RESOLVE_UI_JS, pending)
-            if tasks:
-                await asyncio.gather(*tuple(tasks), return_exceptions=True)
-        finally:
-            remove_listener("response", on_response)
-        return raw, payloads
+    async def _read_ui(self, pending: list[dict[str, Any]]) -> dict[str, Any]:
+        """Read suggestions from the rendered page and its resulting URL only."""
+        return await self.session.run_on_linkedin(_RESOLVE_UI_JS, pending)
 
     async def _navigate(self, charge) -> None:
         if self.navigate is not None:
@@ -332,51 +322,16 @@ class SalesNavFilterResolver:
             await self.session.page.goto("https://www.linkedin.com/sales/search/people")
 
 
-def _prefer_response_candidates(
-    rendered: list[dict[str, str]], payloads: list[Any]
-) -> list[dict[str, str]]:
-    """Prefer IDs from page-fetched payloads when they match rendered labels."""
-    from_payload: list[dict[str, str]] = []
+def _candidate_from_url(url: str, item: dict[str, Any]) -> dict[str, str] | None:
+    """Resolve an exact selected suggestion from the page's Rest.li URL."""
+    from linkedin_mcp_server.linkedin.sales_nav_read import restli_filter_values
 
-    def walk(value: Any) -> None:
-        if isinstance(value, dict):
-            label = next(
-                (
-                    value.get(key)
-                    for key in ("label", "displayName", "name", "text", "title")
-                    if isinstance(value.get(key), str)
-                ),
-                None,
-            )
-            identifier = next(
-                (
-                    value.get(key)
-                    for key in ("id", "value", "entityUrn", "urn", "geoId")
-                    if isinstance(value.get(key), (str, int))
-                ),
-                None,
-            )
-            if label and identifier is not None:
-                from_payload.append({"label": label, "id": str(identifier)})
-            for nested in value.values():
-                walk(nested)
-        elif isinstance(value, list):
-            for nested in value:
-                walk(nested)
-
-    for payload in payloads:
-        walk(payload)
-    result = []
-    for option in rendered:
-        matches = [
-            item
-            for item in from_payload
-            if normalize_filter_label(item["label"])
-            == normalize_filter_label(option["label"])
-        ]
-        ids = {item["id"] for item in matches}
-        if len(ids) == 1:
-            result.append({"label": option["label"], "id": next(iter(ids))})
-        elif option.get("id"):
-            result.append(option)
-    return result
+    expected_type = item.get("filter_type")
+    wanted = normalize_filter_label(str(item.get("query", "")))
+    matches = [
+        {"id": entry["id"], "label": entry["text"]}
+        for entry in restli_filter_values(url)
+        if entry["filter_type"] == expected_type
+        and normalize_filter_label(entry["text"]) == wanted
+    ]
+    return matches[0] if len(matches) == 1 else None

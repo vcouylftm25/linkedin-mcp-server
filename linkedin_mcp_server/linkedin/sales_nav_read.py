@@ -151,11 +151,11 @@ _NON_FILTER_QUERY_KEYS = frozenset({"sessionId"})
 
 
 def missing_filter_keys(requested_url: str, landed_url: str) -> tuple[str, ...]:
-    """Query keys of `requested_url` that `landed_url` does not carry.
+    """Return outer keys and nested filters or keywords lost on landing.
 
-    Presence only. LinkedIn re-encodes values, and a value comparison
-    would fail on a search it actually kept. A missing key is a different
-    search. ``sessionId`` is not a filter.
+    LinkedIn re-encodes URL values, so compare decoded Rest.li filter IDs and
+    keyword values rather than encoded query bytes. ``sessionId`` is not a
+    filter.
     """
     requested = parse_qs(urlparse(requested_url).query, keep_blank_values=True)
     landed = parse_qs(urlparse(landed_url).query, keep_blank_values=True)
@@ -166,13 +166,17 @@ def missing_filter_keys(requested_url: str, landed_url: str) -> tuple[str, ...]:
     }
     # Sales Navigator nests every structured filter in the single `query`
     # parameter. Presence of that outer key alone does not prove the filters
-    # survived; compare the exact requested IDs after Rest.li decoding.
+    # survived; compare the exact requested IDs and keywords after decoding.
     requested_query = _restli_query(requested.get("query", [""])[0])
     landed_query = _restli_query(landed.get("query", [""])[0])
     for filter_type, ids in requested_query.items():
         missing_ids = ids - landed_query.get(filter_type, set())
         if missing_ids:
             missing.update(f"{filter_type}:{item}" for item in missing_ids)
+    requested_keywords = _restli_keywords(requested.get("query", [""])[0])
+    landed_keywords = _restli_keywords(landed.get("query", [""])[0])
+    if requested_keywords is not None and landed_keywords != requested_keywords:
+        missing.add("keywords")
     return tuple(sorted(missing))
 
 
@@ -197,6 +201,89 @@ def _restli_query(value: str) -> dict[str, set[str]]:
                 ids.add(value_part[3:].split(",", 1)[0].split(")", 1)[0])
         if filter_type and ids:
             result.setdefault(filter_type, set()).update(ids)
+    return result
+
+
+def _restli_keywords(value: str) -> str | None:
+    """Read the optional keywords atom from a decoded Rest.li query."""
+    value = unquote(value)
+    marker = "keywords:"
+    start = value.find(marker)
+    if start < 0:
+        return None
+    atom = _split_restli_fields(value[start + len(marker) :])[0].rstrip(")")
+    return _unescape_restli_atom(atom)
+
+
+def _unescape_restli_atom(value: str) -> str:
+    result: list[str] = []
+    escaped = False
+    for char in value:
+        if escaped:
+            result.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        else:
+            result.append(char)
+    if escaped:
+        result.append("\\")
+    return "".join(result)
+
+
+def _split_restli_fields(value: str) -> list[str]:
+    fields: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for char in value:
+        if escaped:
+            current.extend(("\\", char))
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == ",":
+            fields.append("".join(current))
+            current.clear()
+        else:
+            current.append(char)
+    if escaped:
+        current.append("\\")
+    fields.append("".join(current))
+    return fields
+
+
+def restli_filter_values(url: str) -> list[dict[str, str]]:
+    """Read filter IDs and rendered text values from a Sales Navigator URL."""
+    query = parse_qs(urlparse(url).query, keep_blank_values=True).get("query", [""])[0]
+    query = unquote(query)
+    marker = "filters:List(("
+    start = query.find(marker)
+    if start < 0:
+        return []
+    body = query[start + len(marker) :]
+    result: list[dict[str, str]] = []
+    for item in body.split("),(type:"):
+        filter_type = item.split(",values:List((", 1)[0].removeprefix("type:")
+        values_at = item.find(",values:List((")
+        if values_at < 0:
+            continue
+        values = item[values_at + len(",values:List((") :]
+        for value_part in values.split("),(id:"):
+            if value_part.startswith("id:"):
+                fields = _split_restli_fields(value_part)
+                identifier = fields[0][3:]
+                text = next(
+                    (field[5:] for field in fields[1:] if field.startswith("text:")),
+                    "",
+                )
+                if filter_type and identifier and text:
+                    result.append(
+                        {
+                            "filter_type": filter_type,
+                            "id": _unescape_restli_atom(identifier),
+                            "text": _unescape_restli_atom(text),
+                        }
+                    )
     return result
 
 

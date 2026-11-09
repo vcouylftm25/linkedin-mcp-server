@@ -23,6 +23,7 @@ from linkedin_mcp_server.linkedin.connection import ActionSignals
 from linkedin_mcp_server.linkedin.connection_actions import ConnectionActions
 from linkedin_mcp_server.linkedin.navigation import PageNavigator
 from linkedin_mcp_server.linkedin.session import PageSession
+from linkedin_mcp_server.linkedin.write_attempt import WriteAttempt, track_write_attempt
 
 from .support.navigation import held_in
 
@@ -88,6 +89,27 @@ def _signals(
         has_labeled_action_anchor=labeled_anchor,
         has_incoming_action_row=incoming_row,
     )
+
+
+@pytest.mark.parametrize(("clicked", "attempted"), [(False, False), (True, True)])
+async def test_incoming_accept_marks_only_a_confirmed_action(
+    mock_page, clicked, attempted
+):
+    actions = _actions(mock_page)
+    marker = WriteAttempt()
+    mock_page.url = "https://www.linkedin.com/in/testuser/"
+    with (
+        patch.object(
+            mock_page,
+            "evaluate",
+            new_callable=AsyncMock,
+            return_value=clicked,
+        ),
+        track_write_attempt(marker),
+    ):
+        assert await actions._click_incoming_accept() is clicked
+
+    assert marker.attempted is attempted
 
 
 class TestConnectWithPerson:

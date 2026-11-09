@@ -32,6 +32,10 @@ from linkedin_mcp_server.linkedin.identifiers import (
 )
 from linkedin_mcp_server.linkedin.navigation import PageNavigator
 from linkedin_mcp_server.linkedin.session import PageSession
+from linkedin_mcp_server.linkedin.write_attempt import (
+    clear_write_attempt,
+    mark_write_attempt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2344,6 +2348,7 @@ class MessageSender:
                             # reports an error, so an exception from this
                             # round trip is ambiguous.
                             may_have_submitted = True
+                            mark_write_attempt()
                             submission = await self._submit_verified_message(
                                 message,
                                 target=target,
@@ -2365,6 +2370,7 @@ class MessageSender:
 
                         if submission != "clicked":
                             may_have_submitted = False
+                            clear_write_attempt()
                             return respond(
                                 self._page.url,
                                 "send_unavailable",

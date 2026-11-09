@@ -9,13 +9,16 @@ from linkedin_mcp_server.linkedin.sales_nav_filters import (
     SalesNavFilterError,
     SalesNavFilters,
     build_sales_nav_search_url,
+    normalize_filter_label,
 )
-from linkedin_mcp_server.linkedin.sales_nav_read import _restli_query
-from linkedin_mcp_server.linkedin.sales_nav_read import missing_filter_keys
+from linkedin_mcp_server.linkedin.sales_nav_read import (
+    _restli_query,
+    missing_filter_keys,
+    restli_filter_values,
+)
 from linkedin_mcp_server.linkedin.sales_nav_resolver import (
     SalesNavFilterCache,
     SalesNavFilterResolver,
-    _prefer_response_candidates,
     candidate_result,
 )
 from linkedin_mcp_server.linkedin.session import PageSession
@@ -46,6 +49,14 @@ def test_restli_url_round_trip_preserves_unicode_and_delimiters():
 
     assert "São Paulo" in unquote(url)
     assert _restli_query(query) == {"CURRENT_TITLE": {"title-1"}}
+    assert missing_filter_keys(url, url) == ()
+    assert restli_filter_values(url) == [
+        {
+            "filter_type": "CURRENT_TITLE",
+            "id": "title-1",
+            "text": "Diretor (M&A), São Paulo: CFO",
+        }
+    ]
     assert r"Diretor \(M&A\)\, São Paulo\: CFO" in query
     assert r"keywords:crédito\, \(private\)\: equity" in query
 
@@ -107,13 +118,61 @@ def test_live_candidates_resolve_only_a_unique_exact_label():
     }
 
 
-def test_page_fetched_response_id_is_preferred_for_the_rendered_option():
-    result = _prefer_response_candidates(
-        [{"id": "dom-id", "label": "Indústria"}],
-        [{"options": [{"id": "response-id", "label": "Indústria"}]}],
+def test_filter_label_normalization_collapses_whitespace_and_case():
+    assert normalize_filter_label("  Vice   President ") == "vice president"
+    assert normalize_filter_label("VICE PRESIDENT") == normalize_filter_label(
+        "  Vice   President "
+    )
+    catalog = Catalog(
+        version=1,
+        entries=(
+            {
+                "filter_type": "CURRENT_TITLE",
+                "id": "title-1",
+                "label_pt": "  Vice   President ",
+                "label_en": "Vice President",
+                "source": "synthetic",
+                "verified": False,
+            },
+        ),
+    )
+    assert catalog.resolve("CURRENT_TITLE", "Vice President")["id"] == "title-1"
+
+
+def test_exact_rendered_suggestion_without_id_is_explicitly_unresolved():
+    result = candidate_result(
+        "CURRENT_TITLE", "Vice President", [{"id": "", "label": "Vice President"}]
     )
 
-    assert result == [{"id": "response-id", "label": "Indústria"}]
+    assert result["status"] == "unresolved"
+    assert result["resolved"] is None
+
+
+def test_selected_suggestion_id_and_text_are_read_from_resulting_restli_url():
+    from linkedin_mcp_server.linkedin.sales_nav_resolver import _candidate_from_url
+
+    url = build_sales_nav_search_url(
+        SalesNavFilters(titles=("Vice President",)),
+        catalog=Catalog(
+            version=1,
+            entries=(
+                {
+                    "filter_type": "CURRENT_TITLE",
+                    "id": "title-1",
+                    "label_pt": "Vice President",
+                    "label_en": "Vice President",
+                    "source": "synthetic",
+                    "verified": False,
+                },
+            ),
+        ),
+    )
+    candidate = _candidate_from_url(
+        url,
+        {"filter_type": "CURRENT_TITLE", "query": "  Vice   President "},
+    )
+
+    assert candidate == {"id": "title-1", "label": "Vice President"}
 
 
 def test_filter_cache_is_locale_scoped_expires_and_invalidates_missing_ids(tmp_path):
@@ -171,3 +230,67 @@ async def test_resolver_batches_uncached_labels_into_one_navigation(tmp_path):
 
     assert visits == ["sales_nav", "people-search"]
     assert [item["status"] for item in result["results"]] == ["resolved", "resolved"]
+
+
+async def test_resolver_uses_selected_suggestion_url_when_dom_has_no_id(tmp_path):
+    url = build_sales_nav_search_url(
+        SalesNavFilters(titles=("Vice President",)),
+        catalog=Catalog(
+            version=1,
+            entries=(
+                {
+                    "filter_type": "CURRENT_TITLE",
+                    "id": "title-1",
+                    "label_pt": "Vice President",
+                    "label_en": "Vice President",
+                    "source": "synthetic",
+                    "verified": False,
+                },
+            ),
+        ),
+    )
+
+    class FakePage:
+        url = "https://www.linkedin.com/sales/home"
+
+        def on(self, *_args):
+            raise AssertionError("resolver must not observe page responses")
+
+        def remove_listener(self, *_args):
+            raise AssertionError("resolver must not observe page responses")
+
+    class FakeSession:
+        page = FakePage()
+
+        async def run_on_linkedin(self, _script, arg=None):
+            if arg is None:
+                return "en-US"
+            return {
+                "locale": "en-US",
+                "options": [
+                    {
+                        "filter_type": "CURRENT_TITLE",
+                        "query": "  Vice   President ",
+                        "candidates": [{"id": "", "label": "Vice President"}],
+                        "url": url,
+                    }
+                ],
+            }
+
+    resolver = SalesNavFilterResolver(
+        cast(PageSession, FakeSession()),
+        SalesNavFilterCache(str(tmp_path / "prospecting.sqlite3")),
+        navigate=lambda _charge: _noop(),
+    )
+    result = await resolver.resolve({"CURRENT_TITLE": ["  Vice   President "]})
+
+    assert result["results"][0]["status"] == "resolved"
+    assert result["results"][0]["resolved"] == {
+        "filter_type": "CURRENT_TITLE",
+        "id": "title-1",
+        "label": "Vice President",
+    }
+
+
+async def _noop():
+    return None

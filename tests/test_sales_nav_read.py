@@ -53,6 +53,27 @@ def test_filter_check_ignores_session_id_and_requires_real_filters():
     )
 
 
+@pytest.mark.parametrize(
+    ("landed_keywords", "expected"),
+    [
+        ("keywords:engineer", ()),
+        ("keywords:designer", ("keywords",)),
+        ("", ("keywords",)),
+    ],
+)
+def test_filter_check_requires_requested_keywords_to_survive(landed_keywords, expected):
+    requested = (
+        "https://www.linkedin.com/sales/search/people?query=%28keywords%3Aengineer%29"
+    )
+    landed = "https://www.linkedin.com/sales/search/people?query=" + (
+        "%28" + landed_keywords.replace(":", "%3A") + "%29"
+        if landed_keywords
+        else "%28filters%3AList%28%29%29"
+    )
+
+    assert missing_filter_keys(requested, landed) == expected
+
+
 def test_page_url_keeps_filters_and_marks_requested_page():
     url = "https://www.linkedin.com/sales/search/people?query=filters&foo=bar"
     page_two = url_with_page(url, 2)

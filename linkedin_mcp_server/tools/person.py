@@ -20,6 +20,7 @@ from linkedin_mcp_server.linkedin import parse_person_sections
 from linkedin_mcp_server.linkedin.contracts import FilterValidationError
 from linkedin_mcp_server.linkedin.identifiers import normalize_person_identifier
 from linkedin_mcp_server.linkedin.search_urls import build_people_search_url
+from linkedin_mcp_server.linkedin.write_attempt import WriteAttempt, track_write_attempt
 from linkedin_mcp_server.prospecting_limits import ProspectingLimits
 
 logger = logging.getLogger(__name__)
@@ -273,6 +274,7 @@ def register_person_tools(
         """
         linkedin_username = normalize_person_identifier(linkedin_username)
         token = limits.reserve("invite") if limits is not None and not dry_run else None
+        write_attempt = WriteAttempt()
         try:
             extractor = await get_ready_extractor(ctx, tool_name="connect_with_person")
         except BaseException:
@@ -285,30 +287,21 @@ def register_person_tools(
             note is not None,
         )
 
-        await ctx.report_progress(
-            progress=0,
-            total=100,
-            message="Starting LinkedIn connection flow",
-        )
-
         try:
-            result = await extractor.connect_with_person(
-                linkedin_username, note=note, dry_run=dry_run
+            await ctx.report_progress(
+                progress=0,
+                total=100,
+                message="Starting LinkedIn connection flow",
             )
+            with track_write_attempt(write_attempt):
+                result = await extractor.connect_with_person(
+                    linkedin_username, note=note, dry_run=dry_run
+                )
         except BaseException:
-            # A browser failure during submission can mean LinkedIn accepted it.
+            if token is not None and limits is not None and not write_attempt.attempted:
+                limits.release(token)
             raise
-        if (
-            token is not None
-            and limits is not None
-            and result.get("status")
-            not in (
-                "connected",
-                "accepted",
-                "send_failed",
-                "outcome_unknown",
-            )
-        ):
+        if token is not None and limits is not None and not write_attempt.attempted:
             limits.release(token)
 
         await ctx.report_progress(progress=100, total=100, message="Complete")

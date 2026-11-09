@@ -38,13 +38,14 @@ a page-owning collaborator.
 | `post_publisher` | `COMPOSER_URL`, `MAX_POST_CHARS`, `PostPublisher`, `fresh_post_urns()`, `post_permalink()`, `refuse_an_invalid_image()`, `refuse_an_invalid_post()`, `urn_created_ms()` | `page-owning` |
 | `posts` | `PostSearch` | `browser-free` |
 | `profile_page` | `MessageTarget`, `MessageTargetResolution`, `ProfilePageReader`, `ReadMessageTarget` | `browser-free` |
-| `sales_nav_filters` | `Catalog`, `FILTER_FIELDS`, `SalesNavFilterError`, `SalesNavFilters`, `build_sales_nav_search_url()` | `browser-free` |
-| `sales_nav_read` | `LOGIN_WALL_PATHS`, `MAX_SALES_NAV_PAGES`, `PAYWALL_PATHS`, `PRODUCT_SURFACES`, `SALES_NAV_NAVIGATION_KIND`, `STATUS_MESSAGE`, `SalesNavAccess`, `classify_sales_nav_access()`, `landed_on_requested_page()`, `missing_filter_keys()`, `page_of()`, `parse_sales_leads()`, `require_max_pages()`, `url_with_page()` | `browser-free` |
-| `sales_nav_resolver` | `CACHE_TTL`, `FILTER_UI_LABELS`, `SalesNavFilterCache`, `SalesNavFilterResolver`, `candidate_result()`, `normalize_filter_label()` | `page-owning` |
+| `sales_nav_filters` | `Catalog`, `FILTER_FIELDS`, `SalesNavFilterError`, `SalesNavFilters`, `build_sales_nav_search_url()`, `normalize_filter_label()` | `browser-free` |
+| `sales_nav_read` | `LOGIN_WALL_PATHS`, `MAX_SALES_NAV_PAGES`, `PAYWALL_PATHS`, `PRODUCT_SURFACES`, `SALES_NAV_NAVIGATION_KIND`, `STATUS_MESSAGE`, `SalesNavAccess`, `classify_sales_nav_access()`, `landed_on_requested_page()`, `missing_filter_keys()`, `page_of()`, `parse_sales_leads()`, `require_max_pages()`, `restli_filter_values()`, `url_with_page()` | `browser-free` |
+| `sales_nav_resolver` | `CACHE_TTL`, `FILTER_UI_LABELS`, `SalesNavFilterCache`, `SalesNavFilterResolver`, `candidate_result()` | `page-owning` |
 | `sales_navigator` | `MAX_RESULTS_PER_CALL`, `NavigationCharge`, `SALES_NAV_ACCOUNT_SEARCH_PATH`, `SALES_NAV_HOME_URL`, `SALES_NAV_LEAD_SEARCH_PATH`, `SALES_NAV_SAVED_LEADS_URL`, `SalesNavigatorReader`, `validate_sales_nav_url()` | `page-owning` |
 | `search_urls` | `CONTENT_DATE_POSTED_MAP`, `CONTENT_TYPE_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
 | `session` | `NAV_DELAY`, `PageSession` | `page-owning` |
 | `text` | `CONVERSATION_ACTIONS_EN_US`, `ConversationActionTextTable`, `DETAIL_CAPTURE_EN_US`, `DetailCaptureTextTable`, `JOB_APPLY_EN_US`, `JOB_POSTING_EN_US`, `JOB_SEARCH_EN_US`, `JobApplyTextTable`, `JobPostingTextTable`, `JobSearchTextTable`, `SIDEBAR_CHROME_EN`, `SidebarChromeTable`, `filter_linkedin_noise_lines()`, `strip_conversation_chrome()`, `strip_linkedin_noise()`, `truncate_linkedin_noise()` | `browser-free` |
+| `write_attempt` | `WriteAttempt`, `clear_write_attempt()`, `mark_write_attempt()`, `track_write_attempt()` | `browser-free` |
 
 ## Internal import graph
 
@@ -52,7 +53,7 @@ a page-owning collaborator.
 - `capture` -> `content`, `contracts`, `feed_payload`, `link_metadata`, `navigation`, `session`, `text`
 - `company` -> `capture`, `contracts`, `fields`, `identifiers`, `link_metadata`, `search_urls`, `session`
 - `connection` -> _(none)_
-- `connection_actions` -> `connection`, `identifiers`, `navigation`, `session`
+- `connection_actions` -> `connection`, `identifiers`, `navigation`, `session`, `write_attempt`
 - `content` -> `session`, `text`
 - `contracts` -> `identifiers`, `link_metadata`
 - `conversations` -> `content`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `session`, `text`
@@ -65,7 +66,7 @@ a page-owning collaborator.
 - `job_policy` -> `link_metadata`, `text`
 - `jobs` -> `capture`, `contracts`, `identifiers`, `job_pages`, `job_policy`, `link_metadata`, `navigation`, `search_urls`, `session`, `text`
 - `link_metadata` -> _(none)_
-- `message_sender` -> `contracts`, `identifiers`, `navigation`, `session`
+- `message_sender` -> `contracts`, `identifiers`, `navigation`, `session`, `write_attempt`
 - `navigation` -> `session`
 - `person` -> `capture`, `contracts`, `fields`, `identifiers`, `link_metadata`, `navigation`, `profile_page`, `search_urls`, `session`, `text`
 - `post_publisher` -> `navigation`, `session`
@@ -78,6 +79,7 @@ a page-owning collaborator.
 - `search_urls` -> `contracts`
 - `session` -> _(none)_
 - `text` -> _(none)_
+- `write_attempt` -> _(none)_
 
 ## `LinkedInExtractor` public coroutine surface
 

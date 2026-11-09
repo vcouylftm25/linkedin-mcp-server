@@ -29,6 +29,7 @@ from linkedin_mcp_server.linkedin.message_sender import (
 )
 from linkedin_mcp_server.linkedin.navigation import PageNavigator
 from linkedin_mcp_server.linkedin.session import PageSession
+from linkedin_mcp_server.linkedin.write_attempt import WriteAttempt, track_write_attempt
 
 
 def _sender(page) -> MessageSender:
@@ -898,6 +899,7 @@ class TestSendMessage:
     async def test_rejects_ambiguous_submit_after_text_entry(self, mock_page):
         sender = _sender(mock_page)
         patches = self._patch_to_composer(sender, mock_page, submission="invalid")
+        attempt = WriteAttempt()
         with (
             patches[1],
             patches[2],
@@ -910,10 +912,14 @@ class TestSendMessage:
             patches[9],
             patches[10],
         ):
-            result = await sender.send_message("testuser", "Hello!", confirm_send=True)
+            with track_write_attempt(attempt):
+                result = await sender.send_message(
+                    "testuser", "Hello!", confirm_send=True
+                )
 
         assert result["status"] == "send_unavailable"
         assert result["retry_safe"] is True
+        assert attempt.attempted is False
         write.assert_awaited_once()
         mock_page.keyboard.type.assert_not_awaited()
         mock_page.keyboard.press.assert_not_awaited()
@@ -922,6 +928,7 @@ class TestSendMessage:
         self, mock_page
     ):
         sender = _sender(mock_page)
+        attempt = WriteAttempt()
         patches = self._patch_to_composer(sender, mock_page)
         owner = mock_page.evaluate_handle.return_value
         with (
@@ -945,10 +952,14 @@ class TestSendMessage:
                 sender, "_cleanup_owned_message", new_callable=AsyncMock
             ) as cleanup,
         ):
-            result = await sender.send_message("testuser", "Hello!", confirm_send=True)
+            with track_write_attempt(attempt):
+                result = await sender.send_message(
+                    "testuser", "Hello!", confirm_send=True
+                )
 
         assert result["status"] == "send_unavailable"
         assert result["retry_safe"] is True
+        assert attempt.attempted is False
         write.assert_awaited_once()
         prepare.assert_not_awaited()
         submit.assert_not_awaited()
@@ -1324,6 +1335,7 @@ class TestSendMessage:
         """A clicked Send button that changes nothing is not a sent message."""
         sender = _sender(mock_page)
         patches = self._patch_to_composer(sender, mock_page)
+        attempt = WriteAttempt()
         with (
             patches[1],
             patches[2],
@@ -1346,7 +1358,10 @@ class TestSendMessage:
                 return_value=False,
             ) as visible,
         ):
-            result = await sender.send_message("testuser", "Hello!", confirm_send=True)
+            with track_write_attempt(attempt):
+                result = await sender.send_message(
+                    "testuser", "Hello!", confirm_send=True
+                )
 
         # The click happened, so nothing here proves the message did not go
         # out. Answering "not sent" would invite a retry that delivers twice,
@@ -1354,6 +1369,7 @@ class TestSendMessage:
         assert result["status"] == "send_unconfirmed"
         assert result["sent"] is False
         assert result["retry_safe"] is False
+        assert attempt.attempted is True
         visible.assert_awaited_once_with(
             "Hello!",
             target=self._target(),

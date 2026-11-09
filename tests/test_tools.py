@@ -71,6 +71,15 @@ async def test_invite_cap_refuses_before_browser_and_preview_is_free(
     mcp = FastMCP("test")
     register_person_tools(mcp, limits=limits)
     extractor = _make_mock_extractor({"status": "connected"})
+
+    async def connect(*_args, dry_run=False, **_kwargs):
+        if not dry_run:
+            from linkedin_mcp_server.linkedin.write_attempt import mark_write_attempt
+
+            mark_write_attempt()
+        return {"status": "connected"}
+
+    extractor.connect_with_person.side_effect = connect
     ready = serve_extractor(extractor)
     call = await get_tool_fn(mcp, "connect_with_person")
     await call("testuser", mock_context, dry_run=True)
@@ -90,6 +99,15 @@ async def test_message_cap_refuses_before_browser_and_preview_is_free(
     mcp = FastMCP("test")
     register_messaging_tools(mcp, limits=limits)
     extractor = _make_mock_extractor({"status": "sent", "retry_safe": False})
+
+    async def send(*_args, dry_run=False, **_kwargs):
+        if not dry_run:
+            from linkedin_mcp_server.linkedin.write_attempt import mark_write_attempt
+
+            mark_write_attempt()
+        return {"status": "sent", "retry_safe": False}
+
+    extractor.send_message.side_effect = send
     ready = serve_extractor(extractor)
     call = await get_tool_fn(mcp, "send_message")
     await call("testuser", "Hello", True, mock_context, dry_run=True)
@@ -97,6 +115,64 @@ async def test_message_cap_refuses_before_browser_and_preview_is_free(
     with pytest.raises(Exception, match="Daily message limit reached"):
         await call("testuser", "Hello", True, mock_context)
     assert ready.await_count == 2
+
+
+@pytest.mark.parametrize(
+    ("tool_kind", "attempted"),
+    [
+        ("connect_with_person", False),
+        ("connect_with_person", True),
+        ("send_message", False),
+        ("send_message", True),
+        ("reply_to_conversation", False),
+        ("reply_to_conversation", True),
+    ],
+)
+async def test_write_quota_releases_only_before_action_attempt(
+    tmp_path, mock_context, serve_extractor, tool_kind, attempted
+):
+    if tool_kind == "connect_with_person":
+        from linkedin_mcp_server.tools.person import register_person_tools
+
+        kind = "invite"
+    else:
+        from linkedin_mcp_server.tools.messaging import register_messaging_tools
+
+        kind = "message"
+
+    limits = ProspectingLimits(1, 1, str(tmp_path))
+    mcp = FastMCP("test")
+    if tool_kind == "connect_with_person":
+        register_person_tools(mcp, limits=limits)
+    else:
+        register_messaging_tools(mcp, limits=limits)
+    extractor = _make_mock_extractor({})
+
+    async def fail_before_or_after_write(*_args, **kwargs):
+        if attempted:
+            from linkedin_mcp_server.linkedin.write_attempt import mark_write_attempt
+
+            mark_write_attempt()
+        raise RuntimeError("synthetic action failure")
+
+    action = getattr(extractor, tool_kind)
+    action.side_effect = fail_before_or_after_write
+    serve_extractor(extractor)
+    call = await get_tool_fn(mcp, tool_kind)
+    args = (
+        ("alice", mock_context)
+        if tool_kind == "connect_with_person"
+        else ("alice", "Hello", True, mock_context)
+        if tool_kind == "send_message"
+        else ("thread-1", "Hello", True, mock_context)
+    )
+
+    with pytest.raises(Exception, match="synthetic action failure"):
+        await call(*args)
+
+    assert limits.report()["invites" if kind == "invite" else "messages"][
+        "used"
+    ] == int(attempted)
 
 
 @pytest.fixture
@@ -2065,7 +2141,11 @@ class TestMessagingTools:
         assert result["status"] == "sent"
         assert result["sent"] is True
         mock_extractor.send_message.assert_awaited_once_with(
-            "testuser", "Hello!", confirm_send=True, profile_urn=None, dry_run=False
+            "testuser",
+            "Hello!",
+            confirm_send=True,
+            profile_urn=None,
+            dry_run=False,
         )
 
     async def test_send_message_description_explains_connection_handoff(self):
