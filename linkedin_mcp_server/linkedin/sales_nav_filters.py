@@ -46,6 +46,15 @@ class SalesNavFilterError(ValueError):
     """A filter cannot be represented without guessing its LinkedIn ID."""
 
 
+def validate_supported_sales_nav_filters(filters: SalesNavFilters) -> None:
+    """Reject fields Sales Navigator does not expose with a verified ID."""
+    for name in ("changed_jobs_90d", "posted_recently_30d"):
+        if getattr(filters, name) is not None:
+            raise SalesNavFilterError(
+                f"{name} has no verified filter ID in the catalog; refusing to guess."
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class Catalog:
     version: int
@@ -89,6 +98,7 @@ def build_sales_nav_search_url(
     filters: SalesNavFilters, *, catalog: Catalog | None = None
 ) -> str:
     """Build a Sales Navigator people search URL using Rest.li query syntax."""
+    validate_supported_sales_nav_filters(filters)
     catalog = catalog or Catalog.load()
     values: list[str] = []
     for field_name, filter_type in FILTER_FIELDS.items():
@@ -101,14 +111,6 @@ def build_sales_nav_search_url(
                 for entry, label in zip(resolved, display_labels, strict=True)
             )
             values.append(f"(type:{filter_type},values:List({rendered}))")
-    for name, value in (
-        ("changed_jobs_90d", filters.changed_jobs_90d),
-        ("posted_recently_30d", filters.posted_recently_30d),
-    ):
-        if value is not None:
-            raise SalesNavFilterError(
-                f"{name} has no verified filter ID in the catalog; refusing to guess."
-            )
     query_parts = [f"filters:List({','.join(values)})"]
     if filters.keywords:
         query_parts.append(f"keywords:{_restli_atom(filters.keywords)}")

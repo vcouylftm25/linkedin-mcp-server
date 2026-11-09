@@ -1238,7 +1238,7 @@
   {
     "name": "sales_nav_search_leads_by_filters",
     "title": "Search Sales Navigator Leads by Filters",
-    "description": "Search for leads with structured filters instead of a pasted URL.\n\nLabels resolve through Sales Navigator's visible typeaheads, using the\nlocale-aware 30-day cache first. Uncached labels resolve through live\ntypeaheads. Ambiguous labels return candidates and stop before\nsearching so the caller can ask which one the banker meant. Up to\n``max_results`` are returned, across at most three result pages.",
+    "description": "Search for leads with structured filters instead of a pasted URL.\n\nFilter labels, including geography, resolve through Sales Navigator's\nvisible typeaheads, using the locale-aware 30-day cache first. Uncached\nlabels resolve through live typeaheads. Ambiguous labels return candidates and stop before\nsearching so the caller can ask which one the banker meant. Up to\n``max_results`` are returned, across at most three result pages.",
     "inputSchema": {
       "properties": {
         "filters": {

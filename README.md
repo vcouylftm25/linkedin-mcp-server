@@ -104,7 +104,7 @@ Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https
 | `sales_nav_status` | Check access to Sales Navigator. |
 | `sales_nav_search_leads` | Read lead results from a Sales Navigator URL. |
 | `sales_nav_resolve_filters` | Resolve free-text filter labels via Sales Navigator typeahead; ambiguous labels return candidates. |
-| `sales_nav_search_leads_by_filters` | Resolve filter labels, including geography, through visible Sales Navigator typeaheads and a locale-aware 30-day cache; return up to 45 leads across at most three pages. Ambiguous labels stop before search. |
+| `sales_nav_search_leads_by_filters` | Resolve supported labels through visible Sales Navigator typeaheads and a locale-aware 30-day cache; return up to 45 leads across at most three pages. Ambiguous labels stop before search. |
 | `sales_nav_search_accounts` | Read account results from a Sales Navigator URL. |
 | `sales_nav_list_leads` | Read saved Sales Navigator leads. |
 | `get_job_details` | Read details from a job posting. |
@@ -117,7 +117,7 @@ Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https
 | `create_campaign` | Create a local prospecting campaign. |
 | `add_leads` | Add profile leads to a campaign. |
 | `preview_batch` | Preview campaign items and approval hashes. |
-| `approve_batch` | Approve campaign items with an issued token. |
+| `approve_batch` | Approve selected campaign items by `action` and `lead_vanity`; the server issues the approval token. |
 | `campaign_status` | Read campaign status and pending approvals. |
 | `export_campaign` | Return campaign data as CSV or JSON text. |
 | `get_session_status` | Check saved login and browser state. |
@@ -129,9 +129,11 @@ and `--daily-message-limit`; `0` disables that cap. Campaigns and counters
 share `prospecting.sqlite3` beside the browser session state. If
 `PROSPECTING_STATE_DIR` or `--prospecting-state-dir` is set, it must resolve to
 that same session-state directory. Campaign tools only edit local state;
-invitation and message execution is not wired in this phase. Daily invite,
-message, and profile-navigation caps are enforced with a weekly invite cap.
-Sales Navigator page loads have a separate limit of 40 per local day.
+invitation and message execution is not wired in this phase. There is no
+`launchd` tick connected to `CampaignRunner`, and no message-drafting tool is
+available yet; both remain roadmap work. Daily invite, message, and
+profile-navigation caps are enforced with a weekly invite cap. Sales Navigator
+page loads have a separate limit of 40 per local day.
 
 <br/>
 <br/>

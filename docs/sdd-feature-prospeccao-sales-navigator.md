@@ -15,22 +15,19 @@ sow: "—"
 - O banker de prospecção (Picanço) usa o Sales Navigator todo dia, **100% manual**: monta filtros (cargo/senioridade alta, setor, região, porte), adiciona pessoas uma a uma, acompanha aceites e manda a primeira mensagem uma a uma. Não parte de lista nem de URL.
 - Dor 1 — **latência do aceite**: não existe aviso confiável de "aceitou"; o banker descobre tarde e a abordagem esfria.
 - Dor 2 — **trabalho repetitivo**: um lote típico de ~50 convites exige ~50 cliques de convite + ~50 mensagens individuais.
-- Estado técnico (branch `feat/sales-navigator`, checkpoint `08bb840`): existem `sales_nav_status/search_leads/search_accounts/list_leads`, só leitura, exigindo **URL colada**; links `/sales/lead/` e `/sales/company/` não são classificados (resultado útil vazio); testes com fixture sintético `/in/` não protegem o comportamento; sem paginação, export, convite, aceite ou campanha. Já existe `ProspectingLimits` (SQLite, teto diário invite=20/message=40, dry-run).
+- Estado técnico: há ferramentas de leitura do Sales Navigator com URL colada ou filtros estruturados, resolução de rótulos por typeahead, paginação limitada, campanha local, aprovação por item e export. O limite de `max_results` é 1–45; cada chamada busca até 15 resultados por página e até três páginas. Não há tick de `launchd` conectado, `CampaignRunner` não está registrado como ferramenta e ainda não existe ferramenta de rascunho de mensagens.
 - **Lacuna de números:** tempo/dia gasto pelo banker, taxa de aceite e tempo médio até a 1ª mensagem não foram medidos. Ver Pontos em Aberto.
 
 ## 2. Comportamento Esperado
 
-O consumidor é o **Claude do banker** (via MCP/CLI); a estratégia (quem abordar, texto) fica nele, o CLI executa com segurança.
+O consumidor é o **Claude do banker** (via MCP/CLI); a estratégia (quem abordar, texto) fica nele. As ferramentas atuais leem o Sales Navigator e editam o estado local da campanha; o envio automatizado é roadmap.
 
-1. **Busca por filtros** → o Claude passa filtros estruturados (cargos, senioridade, setor, região, porte, sinais como "mudou de cargo em 90d"); o CLI monta a busca do Sales Navigator, pagina até o limite pedido e devolve leads estruturados.
-2. **Triagem/dedup** → cada lead vem marcado: já conexão, convite pendente, já abordado em campanha anterior, novo.
-3. **Campanha** → o banker cria uma campanha com os leads escolhidos; o CLI devolve o **lote de convites para aprovação em lote** (com nota opcional por lead).
-4. **Convites** → após aprovação, envio espaçado (intervalo fixo, sem evasão), dentro dos tetos diário e semanal; o CLI informa a cota restante.
-5. **Detecção de aceite** → job periódico em horário comercial lê em lote a lista de conexões recentes e cruza com convites da campanha; aceitos mudam de estado com timestamp.
-6. **Fila de mensagens** → para cada aceito, o Claude gera rascunho; o banker **aprova em lote** (vendo cada texto); envio espaçado, dentro dos tetos.
-7. **Respostas** → leitura de previews (sem marcar como lida) detecta resposta e move o lead para `respondeu`.
-8. **Export** → CSV/JSON da campanha com estado de cada lead.
-9. **Retomada** → qualquer queda (sessão, rede, rate limit) retoma do estado persistido sem reenviar nada.
+1. **Busca por filtros** → o Claude passa rótulos estruturados (cargo, senioridade, função, setor, região, porte e anos no cargo); o servidor resolve os rótulos suportados, monta a busca e devolve leads estruturados. Os sinais `changed_jobs_90d` e `posted_recently_30d` ainda não têm IDs verificados e são recusados antes de navegar.
+2. **Triagem/dedup** → o servidor retorna os dados estruturais visíveis do card e links de referência. Estado de conexão e deduplicação não fazem parte da saída da busca.
+3. **Campanha** → o banker cria uma campanha local e importa leads usando `lead_vanity`, `profile_url`, `name` e, opcionalmente, `kind`, `lead_urn`, `title` e `company`.
+4. **Aprovação** → `preview_batch(campaign_id, action)` mostra os itens e hashes; `approve_batch` recebe `action` e itens identificados por `lead_vanity` (mais `note` para convite ou `text` para mensagem). O servidor calcula os hashes e emite `approval_token`; o cliente não envia tokens.
+5. **Execução, aceite e respostas** → permanecem roadmap. Ainda não há tick de `launchd` conectado, `CampaignRunner` registrado, ferramenta de rascunho de mensagens ou polling de aceite/respostas.
+6. **Export** → `export_campaign(campaign_id, format)` retorna CSV ou JSON como texto; não grava arquivo.
 
 ## 3. Restrições & Premissas
 
@@ -56,12 +53,12 @@ O consumidor é o **Claude do banker** (via MCP/CLI); a estratégia (quem aborda
 |---|---|---|
 | Entrada da busca | Filtros estruturados → URL do Sales Navigator montada pelo CLI (URL colada continua aceita) | Banker parte de filtros; URL colada não serve ao fluxo real. |
 | IDs de filtro | Resolver rótulos em tempo de uso na typeahead renderizada do Sales Navigator; cache local SQLite por tipo/rótulo normalizado/locale, TTL de 30 dias; o JSON é apenas seed opcional | O banker descreve o ICP em texto livre. IDs vêm das sugestões visíveis; ambiguidade volta como candidatos e nunca é adivinhada. A busca confere IDs no URL final e invalida cache se algum filtro sumir. |
-| Estado | Estender o SQLite de `ProspectingLimits` (tabelas novas), com root fixo ao lado da sessão e conferido no start | Fonte única de tetos e idempotência; root divergente entre MCP e `launchd` reenviaria lotes. |
+| Estado | SQLite local compartilhado por limites, campanhas, aprovações e eventos; o root é validado contra a sessão | Mantém orçamento e estado da campanha no mesmo arquivo local. |
 | Detecção de aceite | Hipótese: polling da lista de conexões recentes (a medir na fase 1). Fallback: releitura dos `invited` com teto de páginas por tick | Sem webhook; lista é da conta inteira e pode não ter ordenação/vanity estrutural — decidir com captura real. |
-| Envio | Chave **única global** `(lead_vanity, kind)` com estado `*_unconfirmed` gravado antes do clique; reconciliação por releitura (`detect_connection_state`) antes de qualquer retry | `reserve` atual só conta cota; sem estado ambíguo a retomada reenvia. |
-| Aprovação | Token de aprovação por lote (lista explícita de IDs + hash dos textos); envio exige o token | Lote, mas texto alterado após aprovar invalida o envio. |
+| Envio | O domínio e `CampaignRunner` internos usam estado `*_unconfirmed` e reconciliação; o runner ainda não está registrado como ferramenta | A execução automática permanece desligada até existir a integração e o fluxo operacional. |
+| Aprovação | `approve_batch` recebe `action`, `lead_vanity` por item e o hash opcional do preview; o servidor recalcula hashes e emite o token | Alterar texto depois do preview invalida o hash correspondente. |
 | Leitura de respostas | Preview sem clique (frente A) | Não marcar conversas do banker como lidas. |
-| Agendamento | Comando `prospect tick` idempotente, chamado por launchd (macOS) | Simples, retomável, sem processo eterno; cada tick faz o que estiver pendente. |
+| Agendamento | Roadmap: tick idempotente chamado por `launchd` (macOS) | Ainda não há tick conectado ao servidor ou ao runner. |
 | Alternativa descartada | API oficial Sales Navigator (SNAP) | Exige parceria LinkedIn; inviável agora. |
 
 **Custo estimado:** R$ 0 de infra (local). Custo de IA fica no Claude do banker.
@@ -75,39 +72,49 @@ flowchart LR
   C[Claude do banker] -->|MCP tools| T[tools/prospecting + sales_navigator]
   T --> D[domínio: Campaign, Lead, Approval — sem framework]
   D --> R[(SQLite prospecting.sqlite3)]
-  T --> B[adapters browser: SalesNavSearch, ConnectionsPoll, Invite, Message]
-  L[launchd: prospect tick] --> T
+  T --> B[Sales Navigator read adapter]
+  L[launchd tick: roadmap, not wired] -.-> T
+  R -.-> C[CampaignRunner and send adapters: roadmap integration]
 ```
 
 Camadas: domínio puro (`prospecting/domain.py`: estados e transições), repositório SQLite, adapters de browser (DOM), tools MCP finas.
 
 **Contratos centrais:**
 
-A busca estruturada é `sales_nav_search_leads_by_filters`, somente leitura, com construção Rest.li e reuso do `SalesNavigatorReader`. `sales_nav_resolve_filters` aceita rótulos livres organizados por tipo, visita uma vez a busca de pessoas para o lote e lê as sugestões renderizadas; usa IDs dos atributos DOM quando disponíveis e, caso contrário, seleciona uma sugestão exata e lê ID e texto da URL Rest.li resultante. Não inspeciona corpos de respostas da página. O cache fica no mesmo `prospecting.sqlite3` do estado de prospecção e distingue o locale da conta. Cada visita de resolução reserva uma navegação `sales_nav`. Um match exato único com ID pode ser usado; múltiplos candidatos retornam `needs_clarification` para o Claude perguntar ao banker; sem ID verificável, o status é `unresolved` e não há busca. A URL final é conferida também nos filtros aninhados em `query`, inclusive keywords, não apenas pela presença do parâmetro externo. Se um ID solicitado não sobreviver à navegação, a entrada correspondente é removida do cache.
+A busca estruturada é `sales_nav_search_leads_by_filters`, somente leitura, com construção Rest.li e reuso do `SalesNavigatorReader`. `sales_nav_resolve_filters` aceita rótulos livres organizados por tipo, visita uma vez a busca de pessoas para o lote e lê as sugestões renderizadas; usa IDs dos atributos DOM quando disponíveis e, caso contrário, seleciona uma sugestão exata e lê ID e texto da URL Rest.li resultante. Não inspeciona corpos de respostas da página. O cache fica no mesmo `prospecting.sqlite3` do estado de prospecção e distingue o locale da conta. Cada visita de resolução reserva uma navegação `sales_nav`. Um match exato único com ID pode ser usado; múltiplos candidatos retornam `needs_clarification` para o Claude perguntar ao banker; locale não suportado retorna `unsupported_locale`, e sem ID verificável o status é `unresolved`. Esses casos param antes da busca de resultados. A URL final é conferida também nos filtros aninhados em `query`, inclusive keywords, não apenas pela presença do parâmetro externo. Se um ID solicitado não sobreviver à navegação, a entrada correspondente é removida do cache.
+
+`sales_nav_search_leads_by_filters` recebe `filters` com `titles`, `keywords`, `seniority`, `function`, `industries`, `geographies`, `company_headcount` e `years_in_role`, além de `max_results` (1–45; padrão 15). Um resultado contém `url`, `sections`, `pagination` e, quando encontrados, `leads` e `references`. Cada lead tem `name`, `title`, `company` (pode ser null), `location`, `sales_lead_url` e `vanity` (pode ser null). A ferramenta não retorna `lead_urn`, `profile_url`, estado de conexão ou deduplicação.
 
 ```json
-// sales_nav_search_leads (entrada)
 {"filters": {"titles": ["CFO", "Diretor Financeiro"], "seniority": ["CXO", "Director"],
   "industries": ["Manufacturing"], "geographies": ["São Paulo, Brasil"],
-  "company_headcount": ["501-1000", "1001-5000"], "changed_jobs_90d": true},
- "max_results": 50}
+  "company_headcount": ["501-1000", "1001-5000"]}, "max_results": 45}
+```
 
-// saída (por lead)
-{"lead_urn": "urn:li:fs_salesProfile:(ACwAA...,NAME_SEARCH,abc)", "profile_url": "https://www.linkedin.com/in/fulano/",
- "name": "Fulano de Tal", "title": "CFO", "company": "Indústria X", "location": "São Paulo",
- "connection_degree": 2, "dedup_status": "new"}
+Exemplo de saída (campos textuais encurtados):
+
+```json
+{"url": "https://www.linkedin.com/sales/search/people?query=...",
+ "sections": {"search_results": "..."},
+ "pagination": {"pages_fetched": 1, "next_offset": null, "reason": "complete", "result_kind": "leads"},
+ "leads": [{"name": "Fulano de Tal", "title": "CFO", "company": "Banco Exemplo",
+   "location": "São Paulo", "sales_lead_url": "/sales/lead/ACw...,NAME_SEARCH,.../",
+   "vanity": "fulano-de-tal"}]}
 ```
 
 ```json
-// approve_batch
-{"campaign_id": "cmp_20261103_cfo_sp", "kind": "invite",
- "items": [{"lead_urn": "...", "note": null}],
- "approval_token": "apv_9f2c…", "items_hash": "sha256:…"}
+// preview_batch output supplies the current items_hash; approve_batch input
+{"campaign_id": "cmp_20261103_cfo_sp", "action": "invite",
+ "items": [{"lead_vanity": "fulano", "note": null}], "items_hash": "<preview hash>"}
+// approve_batch output
+{"campaign_id": "cmp_20261103_cfo_sp", "action": "invite",
+ "approval_token": "apv_<server-issued>", "items_hash": "<server-computed hash>",
+ "items": [{"lead_vanity": "fulano", "item_hash": "<server-computed hash>"}]}
 ```
 
-Estados do lead: `imported → invite_approved → invited → accepted → message_drafted → message_approved → messaged → replied` (+ `skipped`, `invite_failed`, `withdrawn`).
+Estados do lead incluem `imported`, `invite_approved`, `invite_unconfirmed`, `invited`, `accepted`, `message_drafted`, `message_approved`, `message_unconfirmed`, `messaged`, `reply_unconfirmed` e `replied`, além de estados de bloqueio (`already_connected`, `already_pending`, `incoming_request`, `connect_unavailable`, `follow_only`), `skipped` e `withdrawn`. A execução e a redação automática continuam no roadmap.
 
-**Modelo de dados (SQLite):** `campaigns(id, name, filters_json, created_at)`, `leads(campaign_id, lead_urn, profile_url, name, title, company, state, updated_at)`, `approvals(token, campaign_id, kind, items_hash, approved_at, consumed_at)`, `events(id, campaign_id, lead_urn, kind, payload_json, at)` (auditoria append-only), reaproveitando `writes` para tetos. Ciclo de vida: local do banker; export sob demanda; retenção a definir (LGPD).
+**Modelo de dados (SQLite):** campanhas e leads são locais; a chave do lead é `lead_vanity`, e `kind` aceita `invite` ou `message`. Aprovações são por ação e por lead, com token emitido pelo servidor e eventos append-only. O estado atual permite preparar e aprovar itens, mas não executá-los automaticamente. Export sob demanda; retenção a definir (LGPD).
 
 **Integrações:** LinkedIn/Sales Navigator via browser (sessão do banker) — sem API.
 
@@ -126,13 +133,12 @@ Estados do lead: `imported → invite_approved → invited → accepted → mess
 | 6 — Mensagens + respostas | Fila de rascunhos com hash conferido pelo servidor, `confirm_send` por item, detecção de resposta sem clique | Kill no meio do lote de mensagens → sem duplicar | 3 dias |
 | 7 — Onboarding | Docs e skill do Claude do banker, baseline medido antes do primeiro envio | Banker roda campanha real de 1 semana | 1–2 dias |
 
-**Premissas da estimativa:** 1 braço de IA (Grok 4.7) codando, Claude revisando; sessão com o banker na fase 1.
-
-**Requisitos incorporados da revisão (obrigatórios):**
+**Roadmap de execução e automação:**
 - Estados novos: `invite_unconfirmed`/`message_unconfirmed` (retomada **nunca** reenvia; reconcilia relendo o perfil), `already_connected`, `already_pending`, `incoming_request` (terminal: campanha **nunca** aceita convite recebido — `connect_with_person` hoje aceita), `connect_unavailable`/`follow_only`, `reply_unconfirmed`.
 - Pausa de **campanha** (não do lead) em 429/999, checkpoint/CAPTCHA, limite semanal ou cota de nota: para tudo por 24 h e avisa.
 - Aprovação: servidor emite o token e recalcula o hash; consumo **por item**, não por lote.
-- Tick do `launchd` só roda sem sessão interativa ativa (lease); nunca dois Chromiums no perfil.
+- Integrar `CampaignRunner` às ferramentas e adicionar tick do `launchd`, que só roda sem sessão interativa ativa (lease); nunca dois Chromiums no perfil.
+- Adicionar ferramenta de rascunho de mensagem antes da aprovação de mensagens.
 - Teto semanal e `outcome_unknown`/`send_failed` contam na cota; não reseta sobre convite não confirmado.
 - Visitas a perfil notificam o lead: contabilizadas como ação no orçamento diário.
 

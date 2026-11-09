@@ -90,6 +90,67 @@ async def test_invite_cap_refuses_before_browser_and_preview_is_free(
     assert ready.await_count == 2
 
 
+async def test_accepting_incoming_invitation_releases_outgoing_invite_slot(
+    tmp_path, mock_context, serve_extractor
+):
+    from linkedin_mcp_server.tools.person import register_person_tools
+    from linkedin_mcp_server.linkedin.write_attempt import mark_write_attempt
+
+    limits = ProspectingLimits(1, 1, str(tmp_path))
+    mcp = FastMCP("test")
+    register_person_tools(mcp, limits=limits)
+    extractor = _make_mock_extractor({})
+
+    async def accept(*_args, **_kwargs):
+        mark_write_attempt()
+        return {"status": "accepted"}
+
+    extractor.connect_with_person.side_effect = accept
+    serve_extractor(extractor)
+    call = await get_tool_fn(mcp, "connect_with_person")
+
+    assert await call("alice", mock_context) == {"status": "accepted"}
+    assert limits.report()["invites"]["used"] == 0
+
+
+async def test_get_person_profile_uses_navigation_budget(
+    tmp_path, mock_context, serve_extractor
+):
+    from linkedin_mcp_server.tools.person import register_person_tools
+
+    limits = ProspectingLimits(1, 1, str(tmp_path))
+    mcp = FastMCP("test")
+    register_person_tools(mcp, limits=limits)
+    extractor = _make_mock_extractor(
+        {"url": "https://www.linkedin.com/in/alice/", "sections": {}}
+    )
+    serve_extractor(extractor)
+    call = await get_tool_fn(mcp, "get_person_profile")
+
+    await call("alice", mock_context)
+
+    assert limits.report()["navigations"]["used"] == 1
+
+
+async def test_get_person_profile_releases_budget_when_linkedin_blocks_navigation(
+    tmp_path, mock_context, serve_extractor
+):
+    from linkedin_mcp_server.tools.person import register_person_tools
+
+    limits = ProspectingLimits(1, 1, str(tmp_path))
+    mcp = FastMCP("test")
+    register_person_tools(mcp, limits=limits)
+    extractor = _make_mock_extractor(
+        {"url": "https://www.linkedin.com/login", "sections": {}}
+    )
+    serve_extractor(extractor)
+    call = await get_tool_fn(mcp, "get_person_profile")
+
+    await call("alice", mock_context)
+
+    assert limits.report()["navigations"]["used"] == 0
+
+
 async def test_message_cap_refuses_before_browser_and_preview_is_free(
     tmp_path, mock_context, serve_extractor
 ):

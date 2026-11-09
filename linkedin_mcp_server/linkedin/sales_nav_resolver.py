@@ -152,15 +152,49 @@ class SalesNavFilterCache:
 _RESOLVE_UI_JS = r"""async (requests) => {
   const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
   const allText = (node) => clean(node.innerText || node.textContent);
-  const panelButton = [...document.querySelectorAll('button,[role=button]')]
-    .find((node) => ['All filters', 'Todos os filtros'].includes(allText(node)));
-  if (panelButton) panelButton.click();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  const findHeading = (labels) => [...document.querySelectorAll('button,[role=button],h1,h2,h3,[role=heading]')]
+  const headingSelector = 'button,[role=button],h1,h2,h3,[role=heading]';
+  const findHeading = (labels, root = document) => [...root.querySelectorAll(headingSelector)]
     .find((node) => labels.includes(allText(node)));
+  const hasRequestedHeading = (root) => requests.some(request =>
+    findHeading(request.ui_labels, root));
+  let panel = [...document.querySelectorAll('[role=dialog],[role=region]')]
+    .find(hasRequestedHeading) || null;
+  if (!panel) {
+    const structuralToggle = [...document.querySelectorAll('button[aria-controls][aria-expanded]')]
+      .find(button => {
+        const controlled = document.getElementById(button.getAttribute('aria-controls'));
+        return controlled && (controlled.matches('[role=dialog],[role=region]') ||
+          controlled.querySelector('input[role=combobox],[role=heading]'));
+      });
+    const localizedFallback = [...document.querySelectorAll('button,[role=button]')]
+      .find(node => ['All filters', 'Todos os filtros'].includes(allText(node)));
+    const toggle = structuralToggle || localizedFallback;
+    if (toggle) {
+      toggle.click();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      panel = [...document.querySelectorAll('[role=dialog],[role=region]')]
+        .find(hasRequestedHeading) || null;
+    }
+  }
+  const waitForOptions = async () => {
+    let previous = null;
+    let stable = 0;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const nodes = [...document.querySelectorAll('[role=option], [role=listbox] [role=listitem]')]
+        .filter(node => allText(node));
+      const signature = nodes.map(allText).join('\u0000');
+      if (signature && signature === previous) stable++;
+      else stable = 0;
+      if (stable >= 1) return nodes;
+      previous = signature;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return [...document.querySelectorAll('[role=option], [role=listbox] [role=listitem]')]
+      .filter(node => allText(node));
+  };
   const options = [];
   for (const request of requests) {
-    const trigger = findHeading(request.ui_labels);
+    const trigger = findHeading(request.ui_labels, panel || document);
     if (!trigger) { options.push({filter_type: request.filter_type, query: request.query, candidates: []}); continue; }
     trigger.click();
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -170,8 +204,7 @@ _RESOLVE_UI_JS = r"""async (requests) => {
     input.focus();
     input.value = request.query;
     input.dispatchEvent(new Event('input', {bubbles: true}));
-    await new Promise(resolve => setTimeout(resolve, 150));
-    const nodes = [...document.querySelectorAll('[role=option]')].filter(node => allText(node));
+    const nodes = await waitForOptions();
     const candidates = nodes.map(node => ({
       id: node.getAttribute('data-id') || node.getAttribute('data-urn') || node.getAttribute('data-value') || node.getAttribute('value') || '',
       label: allText(node)
@@ -216,6 +249,21 @@ class SalesNavFilterResolver:
                 "() => document.documentElement.lang || 'und'"
             )
         ).casefold()
+        if not locale.startswith(("en", "pt")):
+            return {
+                "locale": locale,
+                "results": [
+                    {
+                        "filter_type": filter_type,
+                        "query": query,
+                        "status": "unsupported_locale",
+                        "resolved": None,
+                        "candidates": [],
+                    }
+                    for filter_type, queries in labels.items()
+                    for query in queries
+                ],
+            }
         pending = []
         for filter_type, queries in labels.items():
             for query in queries:

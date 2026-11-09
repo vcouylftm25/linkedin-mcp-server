@@ -1,5 +1,8 @@
 """Pure Sales Navigator classification, parsing, and pagination rules."""
 
+import json
+from pathlib import Path
+
 import pytest
 from urllib.parse import urlencode
 
@@ -140,5 +143,30 @@ def test_structural_lead_parser_returns_public_vanity_or_null_without_labels():
             "location": "Recife",
             "sales_lead_url": "/sales/lead/ACwBBB,NAME_SEARCH,y/",
             "vanity": None,
+        },
+    ]
+
+
+def test_parser_keeps_cards_with_extra_text_and_without_company_link():
+    fixture = Path(__file__).parent / "fixtures" / "sales_nav" / "lead_cards.json"
+    cards = json.loads(fixture.read_text(encoding="utf-8"))
+    leads = parse_sales_leads(cards)
+
+    assert leads == [
+        {
+            "name": "Maria Costa",
+            "title": "Chief Financial Officer",
+            "company": None,
+            "location": "São Paulo, Brazil",
+            "sales_lead_url": "/sales/lead/ACwCCC,NAME_SEARCH,z/",
+            "vanity": "maria-costa",
+        },
+        {
+            "name": "André Lima",
+            "title": "Chief Risk Officer",
+            "company": "Banco Horizonte",
+            "location": "Rio de Janeiro, Brazil",
+            "sales_lead_url": "/sales/lead/ACwDDD,NAME_SEARCH,a/",
+            "vanity": "andre-lima",
         },
     ]

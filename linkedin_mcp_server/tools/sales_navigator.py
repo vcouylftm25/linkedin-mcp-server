@@ -12,6 +12,7 @@ from linkedin_mcp_server.linkedin.sales_nav_filters import (
     FILTER_FIELDS,
     SalesNavFilterError,
     SalesNavFilters,
+    validate_supported_sales_nav_filters,
 )
 from linkedin_mcp_server.error_handler import CodedToolError, ErrorCode
 from linkedin_mcp_server.prospecting_limits import ProspectingLimits
@@ -163,6 +164,10 @@ def register_sales_navigator_tools(
                 years_in_role=tuple(filters.get("years_in_role", [])),
             )
         except (TypeError, ValueError) as exc:
+            raise CodedToolError(str(exc), ErrorCode.INVALID_ARGUMENT) from exc
+        try:
+            validate_supported_sales_nav_filters(model)
+        except SalesNavFilterError as exc:
             raise CodedToolError(str(exc), ErrorCode.INVALID_ARGUMENT) from exc
         pages = min(MAX_SALES_NAV_PAGES, (max_results + 14) // 15)
         extractor = await get_ready_extractor(

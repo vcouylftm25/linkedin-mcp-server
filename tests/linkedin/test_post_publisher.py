@@ -151,8 +151,6 @@ class FakeSession:
         return None
 
     async def run_on_linkedin(self, script: str, arg: Any = None) -> Any:
-        if script is post_publisher._TOAST_LINKS_JS:
-            return list(self.page.toast_links)
         if script is post_publisher._ACTIVITY_ITEMS_JS:
             return {"items": list(self.page.activity_items)}
         assert script is post_publisher._COMPOSER_JS
@@ -231,29 +229,30 @@ async def test_requested_audience_is_refused_before_navigation():
     assert composer.posted is False
 
 
-async def test_a_confirmed_post_publishes_and_never_retries_blindly():
+async def test_a_post_url_without_matching_activity_is_unverified():
     publisher, composer, _ = make(
         post_url="https://www.linkedin.com/feed/update/urn:li:activity:123/"
     )
 
     result = await publisher.create_post("Hello", dry_run=False)
 
-    assert result["status"] == "published"
+    assert result["status"] == "unverified"
     assert result["published"] is True
-    assert result["urn"] == "urn:li:activity:123"
+    assert result["post_url"] is None
     assert result["retry_safe"] is False
     assert composer.posted is True
     # Nothing touches the composer once Post was clicked.
     assert "ControlOrMeta+A" not in composer.keys
 
 
-async def test_closed_composer_without_permalink_does_not_claim_publication():
+async def test_closed_composer_without_dom_permalink_is_explicitly_unverified():
     publisher, composer, _ = make()
 
     result = await publisher.create_post("Hello")
 
-    assert result["status"] == "submitted"
-    assert result["published"] is False
+    assert result["status"] == "unverified"
+    assert result["published"] is True
+    assert result["post_url"] is None
     assert result["retry_safe"] is False
     assert composer.posted is True
 
@@ -444,21 +443,16 @@ def test_fresh_post_urns_keeps_ids_minted_after_the_click_activity_first():
     assert post_publisher.urn_created_ms(new) == CLICK_MS + 800
 
 
-async def test_the_toast_view_post_link_names_the_published_post(frozen_click):
+async def test_toast_link_without_matching_activity_is_unverified(frozen_click):
     publisher, composer, _ = make()
     new = post_id(CLICK_MS + 1500)
     composer.toast_links = [f"/feed/update/urn:li:activity:{new}/"]
 
     result = await publisher.create_post("Hello")
 
-    assert result["status"] == "published"
+    assert result["status"] == "unverified"
     assert result["published"] is True
-    assert result["urn"] == f"urn:li:activity:{new}"
-    assert (
-        result["post_url"]
-        == f"https://www.linkedin.com/feed/update/urn:li:activity:{new}/"
-    )
-    assert result["url"] == result["post_url"]
+    assert result["post_url"] is None
     assert result["retry_safe"] is False
     assert composer.listeners == []
 
@@ -471,12 +465,13 @@ async def test_a_link_to_an_older_post_is_never_taken_for_the_new_one(frozen_cli
 
     result = await publisher.create_post("Hello")
 
-    assert result["status"] == "submitted"
-    assert result["published"] is False
+    assert result["status"] == "unverified"
+    assert result["published"] is True
+    assert result["post_url"] is None
     assert result["retry_safe"] is False
 
 
-async def test_the_publish_call_answer_names_the_post(frozen_click):
+async def test_response_payload_does_not_supply_a_post_permalink(frozen_click):
     publisher, composer, _ = make()
     new = post_id(CLICK_MS + 400)
     composer.responses_after_post = [
@@ -487,8 +482,9 @@ async def test_the_publish_call_answer_names_the_post(frozen_click):
 
     result = await publisher.create_post("Hello")
 
+    assert result["status"] == "unverified"
     assert result["published"] is True
-    assert result["urn"] == f"urn:li:activity:{new}"
+    assert result["post_url"] is None
     assert composer.listeners == []
 
 
@@ -500,8 +496,9 @@ async def test_a_fresh_id_in_a_page_read_alone_is_not_evidence(frozen_click):
 
     result = await publisher.create_post("Hello")
 
-    assert result["status"] == "submitted"
-    assert result["published"] is False
+    assert result["status"] == "unverified"
+    assert result["published"] is True
+    assert result["post_url"] is None
 
 
 async def test_recent_activity_matching_the_text_names_the_post(frozen_click):
@@ -524,6 +521,20 @@ async def test_recent_activity_matching_the_text_names_the_post(frozen_click):
     assert result["urn"] == f"urn:li:activity:{new}"
 
 
+async def test_matching_activity_without_a_fresh_dom_id_stays_unverified(frozen_click):
+    publisher, composer, _ = make()
+    composer.redirects = {
+        "https://www.linkedin.com/in/me/": "https://www.linkedin.com/in/victor/"
+    }
+    composer.activity_items = [{"text": "Victor\nagora\nHello", "ids": []}]
+
+    result = await publisher.create_post("Hello")
+
+    assert result["status"] == "unverified"
+    assert result["published"] is True
+    assert result["post_url"] is None
+
+
 async def test_recent_activity_whose_text_differs_is_not_taken(frozen_click):
     publisher, composer, _ = make()
     composer.redirects = {
@@ -538,8 +549,9 @@ async def test_recent_activity_whose_text_differs_is_not_taken(frozen_click):
 
     result = await publisher.create_post("Hello")
 
-    assert result["status"] == "submitted"
-    assert result["published"] is False
+    assert result["status"] == "unverified"
+    assert result["published"] is True
+    assert result["post_url"] is None
 
 
 async def test_a_dry_run_never_looks_for_a_published_post(frozen_click):

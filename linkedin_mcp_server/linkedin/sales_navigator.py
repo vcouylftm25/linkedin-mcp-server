@@ -39,8 +39,8 @@ SALES_NAV_LEAD_SEARCH_PATH = "/sales/search/people"
 SALES_NAV_ACCOUNT_SEARCH_PATH = "/sales/search/company"
 MAX_RESULTS_PER_CALL = 15
 
-# The adapter chooses the nearest ancestor containing one lead anchor and
-# at least one company link, then copies hrefs and non-anchor text blocks.
+# The adapter chooses the nearest ancestor containing one lead anchor, then
+# copies links and non-anchor text blocks from its structural card.
 # It does not read headings or aria-labels: those are translated.
 # `SALES_NAV_RESULT_CARDS` is the marker the policy trace names this
 # program by; the trace matches a substring, so the name has to stay.
@@ -50,24 +50,31 @@ _SALES_NAV_CARDS_JS = r"""() => {
   const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
   const cards = [];
   const seen = new Set();
-  for (const anchor of document.querySelectorAll(leadSelector)) {
-    let card = anchor;
-    while (card.parentElement &&
-      card.parentElement.querySelectorAll(leadSelector).length === 1 &&
-      card.querySelectorAll('a[href*="/sales/company/"]').length === 0) {
-      card = card.parentElement;
-    }
-    if (!card.querySelectorAll('a[href*="/sales/company/"]').length) continue;
-    if (seen.has(card)) continue;
-    seen.add(card);
-    const companies = [...card.querySelectorAll('a[href*="/sales/company/"]')];
-    const people = [...card.querySelectorAll('a[href*="/in/"]')];
+  const textBlocks = (root) => {
     const blocks = [];
-    for (const node of card.querySelectorAll('*')) {
+    for (const node of root.querySelectorAll('*')) {
       if (node.closest('a') || node.children.length) continue;
       const text = clean(node.textContent);
       if (text) blocks.push(text);
     }
+    return blocks;
+  };
+  for (const anchor of document.querySelectorAll(leadSelector)) {
+    let card = anchor.closest('li,article,[role="listitem"]');
+    if (!card || card.querySelectorAll(leadSelector).length !== 1) {
+      card = anchor.parentElement;
+      while (card && card !== document.body &&
+        (card.querySelectorAll(leadSelector).length !== 1 ||
+         (!card.querySelectorAll('a[href*="/in/"]').length && textBlocks(card).length < 2))) {
+        card = card.parentElement;
+      }
+    }
+    if (!card) continue;
+    if (seen.has(card)) continue;
+    seen.add(card);
+    const companies = [...card.querySelectorAll('a[href*="/sales/company/"]')];
+    const people = [...card.querySelectorAll('a[href*="/in/"]')];
+    const blocks = textBlocks(card);
     cards.push({
       lead_href: anchor.href,
       lead_text: clean(anchor.textContent),
@@ -105,9 +112,13 @@ def validate_sales_nav_url(url: str, expected_path: str) -> str:
 
 def _on_sales_nav_route(url: str, path: str | None = None) -> bool:
     parsed = urlparse(url)
-    return parsed.hostname == "www.linkedin.com" and (
-        parsed.path.startswith("/sales/")
-        and (path is None or parsed.path.rstrip("/") == path)
+    if parsed.hostname != "www.linkedin.com" or not parsed.path.startswith("/sales/"):
+        return False
+    if path is None:
+        return True
+    landed_path = parsed.path.rstrip("/")
+    return landed_path == path or (
+        path == "/sales/lists/people" and landed_path.startswith(path + "/")
     )
 
 
@@ -211,7 +222,19 @@ class SalesNavigatorReader:
                 item for item in resolved["results"] if item["status"] != "resolved"
             ]
             if unresolved:
-                return {"status": "needs_clarification", "filter_resolutions": resolved}
+                status = (
+                    "unsupported_locale"
+                    if any(
+                        item["status"] == "unsupported_locale" for item in unresolved
+                    )
+                    else "needs_clarification"
+                )
+                return {
+                    "url": getattr(self._session.page, "url", ""),
+                    "sections": {},
+                    "status": status,
+                    "filter_resolutions": resolved,
+                }
             entries = tuple(
                 {
                     "filter_type": item["filter_type"],
@@ -321,6 +344,7 @@ class SalesNavigatorReader:
         next_offset: int | None = start + max_pages
         section_error: dict[str, str] | None = None
         capture_error: dict[str, Any] | None = None
+        unparsed_cards = False
 
         for index in range(max_pages):
             page_number = start + index
@@ -358,7 +382,9 @@ class SalesNavigatorReader:
                     "results were returned.",
                     ErrorCode.NOT_FOUND,
                 )
-            page_leads = await self._lead_cards() if kind == "leads" else []
+            page_leads, cards_found = (
+                await self._lead_cards() if kind == "leads" else ([], 0)
+            )
             ids = (
                 [
                     lead["sales_lead_url"]
@@ -401,6 +427,11 @@ class SalesNavigatorReader:
             seen.update(item for item in ids if item)
             if result.error and not capture_error:
                 capture_error = result.error
+            if kind == "leads" and cards_found and not page_leads:
+                unparsed_cards = True
+                reason = "unparsed_cards"
+                next_offset = page_number + 1
+                break
             if not ids or result.error:
                 # An empty page is the end of the list. An extraction error
                 # is not a page the caller should continue from.
@@ -417,6 +448,7 @@ class SalesNavigatorReader:
             and not seen
             and section_error is None
             and capture_error is None
+            and not unparsed_cards
         ):
             reason = "complete"
             next_offset = None
@@ -438,9 +470,9 @@ class SalesNavigatorReader:
             cap=cap,
         )
 
-    async def _lead_cards(self) -> list[dict[str, str | None]]:
+    async def _lead_cards(self) -> tuple[list[dict[str, str | None]], int]:
         raw = await self._session.run_on_linkedin(_SALES_NAV_CARDS_JS)
-        return parse_sales_leads(raw)
+        return parse_sales_leads(raw), len(raw) if isinstance(raw, list) else 0
 
     async def _capture_page(
         self,
@@ -450,9 +482,17 @@ class SalesNavigatorReader:
         charge: NavigationCharge | None,
     ) -> ExtractedSection:
         """Keep a fixed gap before each Sales Navigator navigation."""
+        reservation = None
         if charge is not None:
-            charge(SALES_NAV_NAVIGATION_KIND)
-        await self._session.delay(NAV_DELAY)
+            reservation = charge(SALES_NAV_NAVIGATION_KIND)
+        try:
+            await self._session.delay(NAV_DELAY)
+        except BaseException:
+            owner = getattr(charge, "__self__", None)
+            release = getattr(owner, "release", None)
+            if reservation is not None and release is not None:
+                release(reservation)
+            raise
         return await self._capture.capture(url, section_name, plan)
 
     @staticmethod

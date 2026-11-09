@@ -38,7 +38,7 @@ a page-owning collaborator.
 | `post_publisher` | `COMPOSER_URL`, `MAX_POST_CHARS`, `PostPublisher`, `fresh_post_urns()`, `post_permalink()`, `refuse_an_invalid_image()`, `refuse_an_invalid_post()`, `urn_created_ms()` | `page-owning` |
 | `posts` | `PostSearch` | `browser-free` |
 | `profile_page` | `MessageTarget`, `MessageTargetResolution`, `ProfilePageReader`, `ReadMessageTarget` | `browser-free` |
-| `sales_nav_filters` | `Catalog`, `FILTER_FIELDS`, `SalesNavFilterError`, `SalesNavFilters`, `build_sales_nav_search_url()`, `normalize_filter_label()` | `browser-free` |
+| `sales_nav_filters` | `Catalog`, `FILTER_FIELDS`, `SalesNavFilterError`, `SalesNavFilters`, `build_sales_nav_search_url()`, `normalize_filter_label()`, `validate_supported_sales_nav_filters()` | `browser-free` |
 | `sales_nav_read` | `LOGIN_WALL_PATHS`, `MAX_SALES_NAV_PAGES`, `PAYWALL_PATHS`, `PRODUCT_SURFACES`, `SALES_NAV_NAVIGATION_KIND`, `STATUS_MESSAGE`, `SalesNavAccess`, `classify_sales_nav_access()`, `landed_on_requested_page()`, `missing_filter_keys()`, `page_of()`, `parse_sales_leads()`, `require_max_pages()`, `restli_filter_values()`, `url_with_page()` | `browser-free` |
 | `sales_nav_resolver` | `CACHE_TTL`, `FILTER_UI_LABELS`, `SalesNavFilterCache`, `SalesNavFilterResolver`, `candidate_result()` | `page-owning` |
 | `sales_navigator` | `MAX_RESULTS_PER_CALL`, `NavigationCharge`, `SALES_NAV_ACCOUNT_SEARCH_PATH`, `SALES_NAV_HOME_URL`, `SALES_NAV_LEAD_SEARCH_PATH`, `SALES_NAV_SAVED_LEADS_URL`, `SalesNavigatorReader`, `validate_sales_nav_url()` | `page-owning` |

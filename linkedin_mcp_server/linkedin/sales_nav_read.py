@@ -184,24 +184,91 @@ def _restli_query(value: str) -> dict[str, set[str]]:
     """Read filter type and IDs from a decoded Sales Navigator Rest.li query."""
     value = unquote(value)
     result: dict[str, set[str]] = {}
-    marker = "filters:List(("
+    marker = "filters:List("
     start = value.find(marker)
     if start < 0:
         return result
-    body = value[start + len(marker) :]
-    for item in body.split("),(type:"):
-        filter_type = item.split(",values:List((", 1)[0].removeprefix("type:")
-        values_at = item.find(",values:List((")
-        if values_at < 0:
+    body = _restli_parenthesized(value, start + len(marker) - 1)
+    if body is None:
+        return result
+    for item in _restli_groups(body):
+        fields = _split_restli_fields(_restli_group_content(item))
+        filter_type = next(
+            (field[5:] for field in fields if field.startswith("type:")), ""
+        )
+        values_field = next(
+            (field for field in fields if field.startswith("values:List(")), None
+        )
+        if not filter_type or values_field is None:
             continue
-        values = item[values_at + len(",values:List((") :]
+        values = _restli_parenthesized(values_field, values_field.find("List(") + 4)
+        if values is None:
+            continue
         ids = set()
-        for value_part in values.split("),(id:"):
-            if value_part.startswith("id:"):
-                ids.add(value_part[3:].split(",", 1)[0].split(")", 1)[0])
-        if filter_type and ids:
+        for value_part in _restli_groups(values):
+            identifier = next(
+                (
+                    field[3:]
+                    for field in _split_restli_fields(_restli_group_content(value_part))
+                    if field.startswith("id:")
+                ),
+                "",
+            )
+            if identifier:
+                ids.add(_unescape_restli_atom(identifier))
+        if ids:
             result.setdefault(filter_type, set()).update(ids)
     return result
+
+
+def _restli_parenthesized(value: str, opening: int) -> str | None:
+    """Return balanced parenthesized content, honoring Rest.li escapes."""
+    if opening >= len(value) or value[opening] != "(":
+        return None
+    depth = 0
+    escaped = False
+    for index in range(opening, len(value)):
+        char = value[index]
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return value[opening + 1 : index]
+    return None
+
+
+def _restli_groups(value: str) -> list[str]:
+    """Split a Rest.li list into balanced groups at top-level commas."""
+    groups: list[str] = []
+    depth = 0
+    escaped = False
+    start = 0
+    for index, char in enumerate(value):
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "," and depth == 0:
+            groups.append(value[start:index])
+            start = index + 1
+    groups.append(value[start:])
+    return [group for group in groups if group]
+
+
+def _restli_group_content(value: str) -> str:
+    """Remove one tuple wrapper without trimming nested list delimiters."""
+    if value.startswith("(") and value.endswith(")"):
+        return value[1:-1]
+    return value
 
 
 def _restli_keywords(value: str) -> str | None:
@@ -235,13 +302,20 @@ def _split_restli_fields(value: str) -> list[str]:
     fields: list[str] = []
     current: list[str] = []
     escaped = False
+    depth = 0
     for char in value:
         if escaped:
             current.extend(("\\", char))
             escaped = False
         elif char == "\\":
             escaped = True
-        elif char == ",":
+        elif char == "(":
+            depth += 1
+            current.append(char)
+        elif char == ")":
+            depth -= 1
+            current.append(char)
+        elif char == "," and depth == 0:
             fields.append("".join(current))
             current.clear()
         else:
@@ -256,34 +330,43 @@ def restli_filter_values(url: str) -> list[dict[str, str]]:
     """Read filter IDs and rendered text values from a Sales Navigator URL."""
     query = parse_qs(urlparse(url).query, keep_blank_values=True).get("query", [""])[0]
     query = unquote(query)
-    marker = "filters:List(("
+    marker = "filters:List("
     start = query.find(marker)
     if start < 0:
         return []
-    body = query[start + len(marker) :]
+    body = _restli_parenthesized(query, start + len(marker) - 1)
+    if body is None:
+        return []
     result: list[dict[str, str]] = []
-    for item in body.split("),(type:"):
-        filter_type = item.split(",values:List((", 1)[0].removeprefix("type:")
-        values_at = item.find(",values:List((")
-        if values_at < 0:
+    for item in _restli_groups(body):
+        fields = _split_restli_fields(_restli_group_content(item))
+        filter_type = next(
+            (field[5:] for field in fields if field.startswith("type:")), ""
+        )
+        values_field = next(
+            (field for field in fields if field.startswith("values:List(")), None
+        )
+        if not filter_type or values_field is None:
             continue
-        values = item[values_at + len(",values:List((") :]
-        for value_part in values.split("),(id:"):
-            if value_part.startswith("id:"):
-                fields = _split_restli_fields(value_part)
-                identifier = fields[0][3:]
-                text = next(
-                    (field[5:] for field in fields[1:] if field.startswith("text:")),
-                    "",
+        values = _restli_parenthesized(values_field, values_field.find("List(") + 4)
+        if values is None:
+            continue
+        for value_part in _restli_groups(values):
+            value_fields = _split_restli_fields(_restli_group_content(value_part))
+            identifier = next(
+                (field[3:] for field in value_fields if field.startswith("id:")), ""
+            )
+            text = next(
+                (field[5:] for field in value_fields if field.startswith("text:")), ""
+            )
+            if identifier and text:
+                result.append(
+                    {
+                        "filter_type": filter_type,
+                        "id": _unescape_restli_atom(identifier),
+                        "text": _unescape_restli_atom(text),
+                    }
                 )
-                if filter_type and identifier and text:
-                    result.append(
-                        {
-                            "filter_type": filter_type,
-                            "id": _unescape_restli_atom(identifier),
-                            "text": _unescape_restli_atom(text),
-                        }
-                    )
     return result
 
 
@@ -328,13 +411,11 @@ def parse_sales_leads(cards: object) -> list[dict[str, str | None]]:
     """Turn structural cards into leads.
 
     A card is one result container the adapter already isolated. `name`
-    is the lead anchor's own text. `company` is the text of the single
-    `/sales/company/` anchor in that container. `title` and `location`
-    are the two text blocks that are not anchors. Any other count, a
-    missing name, or an ambiguous company drops the card. `vanity` is the
-    public `/in/` slug when the container has exactly one profile link,
-    and null otherwise. Nothing here looks for the words Title, Company,
-    or Location.
+    is the lead anchor's own text. `company` is optional and comes from the
+    first `/sales/company/` anchor. `title` and `location` are the first two
+    non-anchor text blocks; extra structural text is tolerated. `vanity` is
+    the public `/in/` slug when the container has exactly one profile link,
+    and null otherwise. Nothing here looks for translated field labels.
     """
     if not isinstance(cards, list):
         return []
@@ -359,9 +440,9 @@ def _one_lead(card: object) -> dict[str, str | None] | None:
     classified = classify_link(href)
     if classified is None or classified[0] != "sales_lead":
         return None
-    company_hrefs = _strings(card.get("company_hrefs"))
-    company_texts = _strings(card.get("company_texts"))
-    person_hrefs = _strings(card.get("person_hrefs"))
+    company_hrefs = _strings(card.get("company_hrefs", []))
+    company_texts = _strings(card.get("company_texts", []))
+    person_hrefs = _strings(card.get("person_hrefs", []))
     blocks = _strings(card.get("text_blocks"))
     if (
         company_hrefs is None
@@ -380,10 +461,10 @@ def _one_lead(card: object) -> dict[str, str | None] | None:
     vanities = [slug for link in person_hrefs if (slug := _vanity(link))]
     texts = [text for block in blocks if (text := _clean(block))]
     name = _clean(card.get("lead_text"))
-    company = companies[0] if len(companies) == 1 else None
-    if name is None or company is None or len(texts) != 2:
+    company = companies[0] if companies else None
+    if name is None or len(texts) < 2:
         return None
-    title, location = texts
+    title, location = texts[:2]
     return {
         "name": name,
         "title": title,

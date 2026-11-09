@@ -4,9 +4,11 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock
 
+import pytest
 from fastmcp import FastMCP
 from fastmcp.tools import FunctionTool
 
+from linkedin_mcp_server.error_handler import CodedToolError, ErrorCode
 from linkedin_mcp_server.prospecting_limits import ProspectingLimits
 from linkedin_mcp_server.tools.sales_navigator import register_sales_navigator_tools
 
@@ -72,3 +74,27 @@ async def test_filtered_search_caps_leads_and_section_references(
 
     assert result["leads"] == leads[:2]
     assert result["references"] == {"search_results": references[:2]}
+
+
+@pytest.mark.parametrize("flag", ["changed_jobs_90d", "posted_recently_30d"])
+async def test_unsupported_filter_flags_fail_before_extractor_or_budget_reservation(
+    tmp_path, mock_context, monkeypatch, flag
+):
+    ready = AsyncMock()
+    monkeypatch.setattr(
+        "linkedin_mcp_server.tools.sales_navigator.get_ready_extractor", ready
+    )
+    limits = ProspectingLimits(2, 2, str(tmp_path))
+    mcp = FastMCP("test")
+    register_sales_navigator_tools(mcp, limits=limits)
+    tool = await mcp.get_tool("sales_nav_search_leads_by_filters")
+
+    with pytest.raises(CodedToolError) as raised:
+        await cast(FunctionTool, tool).fn(
+            {"titles": ["Chief Executive Officer"], flag: True},
+            mock_context,
+        )
+
+    assert raised.value.code == ErrorCode.INVALID_ARGUMENT
+    ready.assert_not_awaited()
+    assert limits.report()["sales_nav"]["used"] == 0

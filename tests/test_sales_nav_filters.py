@@ -65,6 +65,52 @@ def test_restli_url_round_trip_preserves_unicode_and_delimiters():
     assert r"keywords:crédito\, \(private\)\: equity" in query
 
 
+@pytest.mark.parametrize(
+    "ids",
+    [
+        ["id-1"],
+        ["id-1", "id-2"],
+        ["id,(1)", r"id\:2", "id-3"],
+    ],
+)
+def test_restli_builder_parser_round_trip_and_each_missing_id_is_detected(ids):
+    entries = tuple(
+        {
+            "filter_type": "CURRENT_TITLE",
+            "id": identifier,
+            "label_pt": f"Título {index}",
+            "label_en": f"Title {index}",
+            "source": "synthetic test catalog",
+            "verified": True,
+        }
+        for index, identifier in enumerate(ids)
+    )
+    catalog = Catalog(version=1, entries=entries)
+    labels = tuple(f"Title {index}" for index in range(len(ids)))
+    url = build_sales_nav_search_url(SalesNavFilters(titles=labels), catalog=catalog)
+
+    parsed = restli_filter_values(url)
+    assert {item["id"] for item in parsed} == set(ids)
+    assert _restli_query(parse_qs(url.split("?", 1)[1])["query"][0]) == {
+        "CURRENT_TITLE": set(ids)
+    }
+    for dropped in ids:
+        remaining = [identifier for identifier in ids if identifier != dropped]
+        reduced = Catalog(
+            version=1,
+            entries=tuple(entry for entry in entries if entry["id"] in remaining),
+        )
+        landed = build_sales_nav_search_url(
+            SalesNavFilters(
+                titles=tuple(
+                    labels[index] for index, item in enumerate(ids) if item != dropped
+                )
+            ),
+            catalog=reduced,
+        )
+        assert f"CURRENT_TITLE:{dropped}" in missing_filter_keys(url, landed)
+
+
 def test_filter_seed_is_packaged_and_readable():
     resource = files("linkedin_mcp_server").joinpath("linkedin/sales_nav_filters.json")
     assert json.loads(resource.read_text(encoding="utf-8")) == {
@@ -257,6 +303,39 @@ async def test_resolver_batches_uncached_labels_into_one_navigation(tmp_path):
 
     assert visits == ["sales_nav", "people-search"]
     assert [item["status"] for item in result["results"]] == ["resolved", "resolved"]
+
+
+async def test_resolver_marks_unsupported_locale_without_typeahead_or_navigation(
+    tmp_path,
+):
+    class FakePage:
+        url = "https://www.linkedin.com/sales/home"
+
+    class FakeSession:
+        page = FakePage()
+        calls = 0
+
+        async def run_on_linkedin(self, _script, _arg=None):
+            self.calls += 1
+            return "fr-FR"
+
+    session = FakeSession()
+    navigations = []
+
+    async def navigate(_charge):
+        navigations.append("visited")
+
+    resolver = SalesNavFilterResolver(
+        cast(PageSession, session),
+        SalesNavFilterCache(str(tmp_path / "state.sqlite3")),
+        navigate=navigate,
+    )
+    result = await resolver.resolve({"CURRENT_TITLE": ["Chief Executive Officer"]})
+
+    assert result["results"][0]["status"] == "unsupported_locale"
+    assert result["results"][0]["resolved"] is None
+    assert session.calls == 1
+    assert navigations == []
 
 
 async def test_resolver_uses_selected_suggestion_url_when_dom_has_no_id(tmp_path):

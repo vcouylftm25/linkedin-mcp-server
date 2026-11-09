@@ -19,6 +19,7 @@ from linkedin_mcp_server.linkedin.sales_navigator import (
     SalesNavigatorReader,
     validate_sales_nav_url,
 )
+from linkedin_mcp_server.linkedin.sales_nav_filters import SalesNavFilters
 from linkedin_mcp_server.linkedin.session import PageSession
 
 
@@ -148,6 +149,112 @@ async def test_saved_lead_list_is_a_single_read_only_capture():
     )
     assert capture.capture.await_args.args[2].max_scrolls == 0
     session.delay.assert_awaited_once_with(2.0)
+
+
+async def test_saved_lead_list_accepts_a_people_list_identifier():
+    reader, _capture, _session = _reader(
+        "https://www.linkedin.com/sales/lists/people/123456/"
+    )
+
+    result = await reader.list_leads()
+
+    assert result["pagination"]["reason"] == "complete"
+
+
+@pytest.mark.parametrize(
+    ("resolution_status", "response_status"),
+    [
+        ("ambiguous", "needs_clarification"),
+        ("unsupported_locale", "unsupported_locale"),
+    ],
+)
+async def test_filter_resolution_keeps_read_tool_response_contract(
+    tmp_path, monkeypatch, resolution_status, response_status
+):
+    url = "https://www.linkedin.com/sales/search/people"
+    reader, _capture, session = _reader(url)
+
+    async def resolve(_self, _labels, *, charge=None):
+        return {
+            "locale": "xx",
+            "results": [
+                {
+                    "filter_type": "CURRENT_TITLE",
+                    "query": "Chief Executive Officer",
+                    "status": resolution_status,
+                    "resolved": None,
+                    "candidates": [],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "linkedin_mcp_server.linkedin.sales_navigator.SalesNavFilterResolver.resolve",
+        resolve,
+    )
+
+    result = await reader.search_leads_by_filters(
+        SalesNavFilters(titles=("Chief Executive Officer",)),
+        state_db_path=str(tmp_path / "state.sqlite3"),
+    )
+
+    assert result == {
+        "url": session.page.url,
+        "sections": {},
+        "status": response_status,
+        "filter_resolutions": {
+            "locale": "xx",
+            "results": [
+                {
+                    "filter_type": "CURRENT_TITLE",
+                    "query": "Chief Executive Officer",
+                    "status": resolution_status,
+                    "resolved": None,
+                    "candidates": [],
+                }
+            ],
+        },
+    }
+
+
+async def test_cards_present_but_none_parse_stop_pagination_as_unparsed():
+    reader, _capture, session = _reader(
+        "https://www.linkedin.com/sales/search/people?query=leads"
+    )
+    session.run_on_linkedin.return_value = [
+        {"lead_href": "/wrong/route", "lead_text": "Card that could not parse"}
+    ]
+
+    result = await reader.search_leads(LEAD_SEARCH_URL)
+
+    assert result["pagination"] == {
+        "pages_fetched": 1,
+        "next_offset": 2,
+        "reason": "unparsed_cards",
+        "result_kind": "leads",
+    }
+
+
+async def test_reservation_is_released_when_delay_fails_before_navigation(tmp_path):
+    from linkedin_mcp_server.prospecting_limits import ProspectingLimits
+
+    page = SimpleNamespace(url="https://www.linkedin.com/sales/home")
+
+    async def fail_delay(_seconds):
+        raise RuntimeError("delay failed before navigation")
+
+    session = SimpleNamespace(page=page, delay=fail_delay)
+    capture = SimpleNamespace(capture=AsyncMock())
+    limits = ProspectingLimits(state_dir=str(tmp_path))
+    reader = SalesNavigatorReader(
+        cast(PageSession, session), cast(SectionCapture, capture)
+    )
+
+    with pytest.raises(RuntimeError, match="delay failed"):
+        await reader.status(charge=limits.reserve)
+
+    assert limits.report()["sales_nav"]["used"] == 0
+    capture.capture.assert_not_awaited()
 
 
 async def test_account_search_paginates_with_checked_page_and_charges_each_load():

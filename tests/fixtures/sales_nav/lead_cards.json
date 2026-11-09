@@ -1,0 +1,27 @@
+[
+  {
+    "lead_href": "https://www.linkedin.com/sales/lead/ACwCCC,NAME_SEARCH,z",
+    "lead_text": "Maria Costa",
+    "person_hrefs": ["https://www.linkedin.com/in/maria-costa/"],
+    "text_blocks": [
+      "Chief Financial Officer",
+      "São Paulo, Brazil",
+      "Current role",
+      "2 years in position"
+    ]
+  },
+  {
+    "lead_href": "https://www.linkedin.com/sales/lead/ACwDDD,NAME_SEARCH,a",
+    "lead_text": "André Lima",
+    "company_hrefs": ["https://www.linkedin.com/sales/company/51"],
+    "company_texts": ["Banco Horizonte"],
+    "person_hrefs": ["https://www.linkedin.com/in/andre-lima/"],
+    "text_blocks": [
+      "Chief Risk Officer",
+      "Rio de Janeiro, Brazil",
+      "Banco Horizonte",
+      "Recently changed roles",
+      "2 shared connections"
+    ]
+  }
+]
