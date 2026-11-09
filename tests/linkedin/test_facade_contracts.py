@@ -7,6 +7,8 @@ from typing import cast
 from unittest.mock import AsyncMock, patch
 
 import inspect
+import json
+from pathlib import Path
 
 import pytest
 
@@ -152,6 +154,15 @@ async def test_registered_tools_match_extractor_delegates():
     assert tool_names == {*TOOL_DELEGATES, *session_tools}
     assert set(TOOL_DELEGATES.values()) == TOOL_FACADE_METHODS
     assert not session_tools & set(TOOL_DELEGATES)
+    manifest = json.loads(
+        (Path(__file__).resolve().parents[2] / "manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    manifest_tools = {item["name"] for item in manifest["tools"]}
+    assert {
+        name for name in tool_names if name.startswith("sales_nav_")
+    } <= manifest_tools
 
 
 async def test_company_posts_delegate_matches_registered_tool_consumer():

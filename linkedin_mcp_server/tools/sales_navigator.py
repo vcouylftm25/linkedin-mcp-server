@@ -123,9 +123,9 @@ def register_sales_navigator_tools(
     ) -> dict[str, Any]:
         """Search for leads with structured filters instead of a pasted URL.
 
-        Labels resolve through Sales Navigator's visible typeaheads, using the
-        locale-aware 30-day cache first. Uncached labels resolve through live
-        typeaheads. Ambiguous labels return candidates and stop before
+        Filter labels, including geography, resolve through Sales Navigator's
+        visible typeaheads, using the locale-aware 30-day cache first. Uncached
+        labels resolve through live typeaheads. Ambiguous labels return candidates and stop before
         searching so the caller can ask which one the banker meant. Up to
         ``max_results`` are returned, across at most three result pages.
         """
@@ -137,7 +137,7 @@ def register_sales_navigator_tools(
                 ErrorCode.INVALID_ARGUMENT,
             )
         try:
-            for key in FILTER_FIELDS.keys() | {"geography_ids"}:
+            for key in FILTER_FIELDS:
                 value = filters.get(key, [])
                 if not isinstance(value, list) or not all(
                     isinstance(item, str) for item in value
@@ -157,7 +157,6 @@ def register_sales_navigator_tools(
                 function=tuple(filters.get("function", [])),
                 industries=tuple(filters.get("industries", [])),
                 geographies=tuple(filters.get("geographies", [])),
-                geography_ids=tuple(filters.get("geography_ids", [])),
                 company_headcount=tuple(filters.get("company_headcount", [])),
                 changed_jobs_90d=filters.get("changed_jobs_90d"),
                 posted_recently_30d=filters.get("posted_recently_30d"),

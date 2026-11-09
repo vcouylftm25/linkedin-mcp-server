@@ -75,7 +75,7 @@ include = ["linkedin_mcp_server*"]
 exclude = ["assets*", "docs*", "tests*"]
 
 [tool.setuptools.package-data]
-linkedin_mcp_server = ["py.typed"]
+linkedin_mcp_server = ["py.typed", "linkedin/sales_nav_filters.json"]
 
 [tool.ruff.lint]
 # Preserve Ruff's pre-0.16 default rule set instead of adopting new rules implicitly.

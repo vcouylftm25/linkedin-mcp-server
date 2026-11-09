@@ -1,6 +1,7 @@
 """Pure Sales Navigator classification, parsing, and pagination rules."""
 
 import pytest
+from urllib.parse import urlencode
 
 from linkedin_mcp_server.linkedin.sales_nav_read import (
     MAX_SALES_NAV_PAGES,
@@ -72,6 +73,18 @@ def test_filter_check_requires_requested_keywords_to_survive(landed_keywords, ex
     )
 
     assert missing_filter_keys(requested, landed) == expected
+
+
+def test_filter_check_accepts_the_same_restli_keywords_with_other_url_encoding():
+    requested = (
+        "https://www.linkedin.com/sales/search/people?query="
+        "%28filters%3AList%28%29%2Ckeywords%3AS%C3%A3o%20Paulo%5C%2C%20CFO%29"
+    )
+    landed = "https://www.linkedin.com/sales/search/people?" + urlencode(
+        {"query": r"(filters:List(),keywords:São Paulo\, CFO)"}
+    )
+
+    assert missing_filter_keys(requested, landed) == ()
 
 
 def test_page_url_keeps_filters_and_marks_requested_page():

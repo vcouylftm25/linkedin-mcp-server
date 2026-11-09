@@ -9,9 +9,11 @@ disappearing.
 """
 
 import asyncio
+import ctypes
 import logging
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -136,27 +138,28 @@ class TestAWrapperThatSaysSomethingFirst:
         assert is_comparable(build.product) is False
 
     @pytest.mark.parametrize(
-        "banner",
+        "banner, version_is_readable",
         [
-            "Chromium launcher v1.2.3",
-            "Chromium launcher 1.2.3",
-            "Launching Chromium under firejail",
+            ("Chromium launcher v1.2.3", False),
+            ("Chromium launcher 1.2.3", True),
+            ("Launching Chromium under firejail", False),
         ],
     )
-    def test_a_banner_therefore_only_costs_the_guard(self, tmp_path, banner):
-        """Not knowing lets the launch through, which is the whole stance.
-
-        Each of these preceded a real Chrome 150 in the measured case, so a
-        refusal here is a refusal of a browser that is *newer* than the
-        profile, and the message asks the user to do what they already did.
-        """
+    def test_a_banner_is_not_mistaken_for_the_browser_version(
+        self, tmp_path, banner, version_is_readable
+    ):
+        """A readable unrelated product is ignored; unknown versions fail closed."""
         profile = _profile_last_opened_by(tmp_path, "150.0.7871.187")
         wrapper = _shell_wrapper(
             tmp_path,
             f"printf '{banner}\\nGoogle Chrome 150.0.7871.187\\n'",
         )
 
-        refuse_a_downgrade(profile, str(wrapper))
+        if version_is_readable:
+            refuse_a_downgrade(profile, str(wrapper))
+        else:
+            with pytest.raises(BrowserDowngradeError, match="could not be determined"):
+                refuse_a_downgrade(profile, str(wrapper))
 
     def test_a_trailing_suffix_is_still_read(self):
         """The fix must not cost the real thing it was protecting."""
@@ -468,65 +471,102 @@ class TestWhichWayTheVersionsHaveToGo:
                 refuse_a_downgrade(profile, "/browser")
 
 
-class TestThePlatformWhereAskingWouldStartABrowser:
-    """Windows, where ``--version`` is not answered but ignored.
-
-    Chromium compiles ``HandleVersionSwitches`` and its call site only under
-    ``BUILDFLAG(IS_POSIX)`` (``chrome/app/chrome_main_delegate.cc``, checked
-    against current main), so on Windows the switch is unrecognised and an
-    unrecognised switch does not stop a browser starting. With no
-    ``--user-data-dir`` it opens whatever profile that binary defaults to, which
-    with ``CHROME_PATH`` is the user's own Chrome: either a window appears and
-    the process forwards its command line, or the probe *is* the browser, blocks
-    for the whole timeout, and is then killed, which is what makes Chrome offer
-    to restore pages afterwards.
-
-    The Windows CI job runs four unrelated files, so nothing here would have
-    seen it. These tests force the platform answer instead of relying on it.
-    """
+class TestWindowsVersionResource:
+    """Windows measures the executable resource without starting Chromium."""
 
     def test_no_binary_is_ever_run_there(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "linkedin_mcp_server.browser_downgrade.a_version_can_be_asked_for",
             lambda: False,
         )
-        with mock.patch(
-            "linkedin_mcp_server.browser_downgrade.subprocess.run"
-        ) as spawned:
-            assert version_of("/anything") is None
+        build = BrowserBuild("Google Chrome for Testing", (153, 0, 8010, 12))
+        with (
+            mock.patch(
+                "linkedin_mcp_server.browser_downgrade._windows_file_version",
+                return_value=build,
+            ) as resource,
+            mock.patch(
+                "linkedin_mcp_server.browser_downgrade.subprocess.run"
+            ) as spawned,
+        ):
+            assert version_of("/anything") == build
 
+        resource.assert_called_once_with("/anything")
         assert spawned.call_count == 0
 
-    def test_the_guard_gives_up_before_it_reads_anything(self, tmp_path, monkeypatch):
-        """Ahead of the marker, so the platform is silent rather than warning
-        on every start about a check it can never perform."""
+    def test_reads_version_and_product_from_the_pe_resource(self, monkeypatch):
+        import linkedin_mcp_server.browser_downgrade as downgrade
+
+        fixed = (ctypes.c_uint32 * 13)(0xFEEF04BD, 0, 153 << 16, (8010 << 16) | 12)
+        translation = (ctypes.c_uint16 * 2)(0x0409, 1200)
+        product = ctypes.create_unicode_buffer("Google Chrome for Testing")
+
+        def write_pointer(pointer_ref, value):
+            pointer_ref._obj.value = ctypes.addressof(value)
+
+        def query(_buffer, key, pointer_ref, length_ref):
+            if key == "\\":
+                write_pointer(pointer_ref, fixed)
+                length_ref._obj.value = ctypes.sizeof(fixed)
+                return True
+            if key == "\\VarFileInfo\\Translation":
+                write_pointer(pointer_ref, translation)
+                length_ref._obj.value = ctypes.sizeof(translation)
+                return True
+            if key.endswith("\\ProductName"):
+                write_pointer(pointer_ref, product)
+                length_ref._obj.value = len(product)
+                return True
+            return False
+
+        def native_call(function):
+            call = mock.Mock(side_effect=function)
+            return call
+
+        dll = SimpleNamespace(
+            GetFileVersionInfoSizeW=native_call(lambda *_args: 64),
+            GetFileVersionInfoW=native_call(lambda *_args: True),
+            VerQueryValueW=native_call(query),
+        )
+        monkeypatch.setattr(os, "name", "nt")
+        monkeypatch.setattr(
+            ctypes, "WinDLL", lambda *_args, **_kwargs: dll, raising=False
+        )
+
+        assert downgrade._windows_file_version("C:/chrome.exe") == BrowserBuild(
+            "Google Chrome for Testing", (153, 0, 8010, 12)
+        )
+
+    def test_the_guard_compares_the_windows_executable_version(
+        self, tmp_path, monkeypatch
+    ):
         profile = _profile_last_opened_by(tmp_path, "150.0.7871.187")
         monkeypatch.setattr(
             "linkedin_mcp_server.browser_downgrade.a_version_can_be_asked_for",
             lambda: False,
         )
 
-        with mock.patch("linkedin_mcp_server.browser_downgrade.version_of") as asked:
-            refuse_a_downgrade(profile, "/browser")
+        with mock.patch(
+            "linkedin_mcp_server.browser_downgrade.version_of",
+            return_value=BrowserBuild("Chromium", (148, 0, 7778, 96)),
+        ) as asked:
+            with pytest.raises(BrowserDowngradeError):
+                refuse_a_downgrade(profile, "/browser")
 
-        assert asked.call_count == 0
+        asked.assert_called_once_with("/browser")
 
-    def test_it_says_nothing_at_the_default_level(self, tmp_path, monkeypatch, caplog):
-        """An *unparseable* marker, which is the only fixture that can see the
-        ordering. With a good one the marker read is silent either way, so the
-        mutation that moves it above the platform gate passes unnoticed; with
-        this one that mutation produces a warning on every Windows start about
-        a check the platform can never perform."""
-        profile = _profile_last_opened_by(tmp_path, "not a version")
+    def test_an_unknown_windows_version_fails_closed(self, tmp_path, monkeypatch):
+        profile = _profile_last_opened_by(tmp_path, "150.0.7871.187")
         monkeypatch.setattr(
             "linkedin_mcp_server.browser_downgrade.a_version_can_be_asked_for",
             lambda: False,
         )
 
-        with caplog.at_level(logging.WARNING):
-            refuse_a_downgrade(profile, "/browser")
-
-        assert not caplog.records, [r.getMessage() for r in caplog.records]
+        with mock.patch(
+            "linkedin_mcp_server.browser_downgrade.version_of", return_value=None
+        ):
+            with pytest.raises(BrowserDowngradeError, match="could not be determined"):
+                refuse_a_downgrade(profile, "/browser")
 
     def test_posix_still_asks(self, monkeypatch):
         """The other half, so the platform switch cannot be left stuck off."""
@@ -542,27 +582,14 @@ class TestThePlatformWhereAskingWouldStartABrowser:
 class TestWhatTheUserIsToldWhenItGivesUp:
     """The default log level is WARNING, so anything quieter is invisible."""
 
-    def test_an_unnameable_binary_is_reported(self, tmp_path, caplog):
-        """The one branch where half the evidence exists and is about to go.
-
-        The marker was read, the launch proceeds, and the older browser
-        rewrites that marker down to its own number on the way out. The guard
-        can never fire on this profile again, so without a line here the
-        eventual "session expired" has nothing to connect it to.
-        """
+    def test_an_unnameable_binary_is_refused(self, tmp_path):
         profile = _profile_last_opened_by(tmp_path, "150.0.7871.187")
 
-        with caplog.at_level(logging.WARNING):
-            with mock.patch(
-                "linkedin_mcp_server.browser_downgrade.version_of", return_value=None
-            ):
+        with mock.patch(
+            "linkedin_mcp_server.browser_downgrade.version_of", return_value=None
+        ):
+            with pytest.raises(BrowserDowngradeError, match="could not be determined"):
                 refuse_a_downgrade(profile, "/browser")
-
-        assert any(
-            record.levelno >= logging.WARNING
-            and "150.0.7871.187" in record.getMessage()
-            for record in caplog.records
-        ), f"nothing at WARNING: {[r.getMessage() for r in caplog.records]}"
 
     def test_a_foreign_product_stays_below_a_warning(self, tmp_path, caplog):
         """That one follows directly from an explicit CHROME_PATH outside the
@@ -597,13 +624,14 @@ class TestWhereItFailsOpen:
 
         assert asked.call_count == 0
 
-    def test_a_silent_binary_is_allowed(self, tmp_path):
+    def test_an_unmeasurable_binary_is_refused(self, tmp_path):
         profile = _profile_last_opened_by(tmp_path, "150.0.7871.187")
 
         with mock.patch(
             "linkedin_mcp_server.browser_downgrade.version_of", return_value=None
         ):
-            refuse_a_downgrade(profile, "/browser")
+            with pytest.raises(BrowserDowngradeError):
+                refuse_a_downgrade(profile, "/browser")
 
     def test_a_fresh_profile_is_not_worth_a_subprocess(self, tmp_path):
         """Order, not just outcome.
@@ -826,38 +854,22 @@ class TestWhatTheLaunchDoes:
 
         assert asked.call_args.args == ("/registry/chromium",)
 
-    async def test_a_managed_launch_refuses_an_older_patchright_package(self, tmp_path):
-        """The package's Chromium, named in the error, before the profile opens.
-
-        A binary mock that is newer must not hide an installed patchright whose
-        declared browser is behind ``Last Version``.
-        """
+    async def test_a_managed_launch_uses_the_actual_registry_binary_version(
+        self, tmp_path
+    ):
+        """A manifest version cannot stand in for the executable on disk."""
         profile = _profile_last_opened_by(tmp_path, "156.0.8078.5")
         recorder: dict = {}
         manager = self._manager(profile)
 
-        with (
-            mock.patch(
-                "linkedin_mcp_server.browser_downgrade.packaged_chromium_version",
-                return_value=(153, 0, 8010, 12),
-            ),
-            mock.patch(
-                "linkedin_mcp_server.browser_downgrade.installed_patchright_version",
-                return_value="1.63.0",
-            ),
-            mock.patch(
-                "linkedin_mcp_server.browser_downgrade.version_of",
-                return_value=BrowserBuild("Chromium", (200, 0, 0, 0)),
-            ),
-        ):
-            with pytest.raises(
-                BrowserDowngradeError, match="patchright 1.63.0"
-            ) as raised:
-                await self._start_against(manager, recorder)
+        with mock.patch(
+            "linkedin_mcp_server.browser_downgrade.version_of",
+            return_value=BrowserBuild("Chromium", (200, 0, 0, 0)),
+        ) as asked:
+            await self._start_against(manager, recorder)
 
-        assert "options" not in recorder
-        assert "153.0.8010.12" in str(raised.value)
-        assert "156.0.8078.5" in str(raised.value)
+        asked.assert_called_once_with("/registry/chromium")
+        assert "options" in recorder
 
 
 class TestWhichBinaryIsChecked:

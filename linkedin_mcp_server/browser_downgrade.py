@@ -18,27 +18,20 @@ Chrome 150 marks its Web Data schema as compatible back that far. It also
 it is a snapshot -- it holds until one store raises its floor, and nothing warns
 when that happens.
 
-Every answer here fails open. Being unable to read a marker, name the binary or
-parse a version is not evidence of a downgrade, and refusing to start a browser
-on the strength of a missing file would turn a guard into an outage.
+An absent or unreadable profile marker does not establish a downgrade. Once a
+valid marker exists, the exact executable version must be measured; if that
+cannot be done, launch is refused before the profile is opened.
 
-That choice costs more than it looks like it does, and the cost belongs here
-rather than in a reviewer's head. Failing open once is not "we will catch it
-next time": the older browser runs, and on its way out it rewrites `Last
-Version` down to its own number (measured -- a launch on a profile marked
-`1.0.0.0` left it reading `148.0.7778.96`). The evidence is gone, so every later
-launch sees no downgrade even after whatever made the version unreadable is
-fixed. It is still the right trade, because the alternative refuses working
-setups on the strength of not knowing, but the guard is one-shot per profile
-and nothing downstream can recover it.
+An unknown executable version is also refused when a valid marker exists. An
+older launch rewrites `Last Version` down to its own number (measured -- a
+launch on a profile marked `1.0.0.0` left it reading `148.0.7778.96`), erasing
+the evidence needed for every later check.
 """
 
-import json
 import logging
 import os
 import re
 import subprocess
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import NamedTuple
 
@@ -171,8 +164,8 @@ _VERSION = re.compile(r"(?:^|(?<=\s))\d+(?:\.\d+){2,}")
 #: reports `Google Chrome for Testing 149.0.7827.55` while linux-arm64 reports
 #: `Chromium 149.0.7827.0`, note the differing final component. At the lock
 #: (revision 1243) both images report `Google Chrome for Testing
-#: 153.0.8010.12`, and so does macOS arm64. Windows never answers:
-#: :func:`a_version_can_be_asked_for` refuses before any binary is asked.
+#: 153.0.8010.12`, and so does macOS arm64. Windows reads the executable's PE
+#: version resource rather than asking it to start with `--version`.
 #:
 #: The third entry is not a managed browser at all. `Google Chrome
 #: 150.0.7871.189` is what an operator's own binary reports when `CHROME_PATH`
@@ -214,28 +207,10 @@ class BrowserBuild(NamedTuple):
 
 
 def a_version_can_be_asked_for() -> bool:
-    """Whether asking a browser binary for its version is a safe thing to do.
+    """Whether asking a browser binary for ``--version`` is safe.
 
-    False on Windows, and not because the answer would merely be empty.
-    Chromium handles ``--version`` in ``HandleVersionSwitches``, and both that
-    function and its call site in ``BasicStartupComplete`` sit inside
-    ``#if BUILDFLAG(IS_POSIX) && !defined(BUILDING_CHROME_RENDERER)``
-    (``chrome/app/chrome_main_delegate.cc``, verified against current main). On
-    Windows that code is not compiled, so ``--version`` is not a handled switch
-    but an *unrecognised* one, and an unrecognised switch does not stop a
-    browser from starting.
-
-    What the probe would actually do there: no ``--user-data-dir`` is passed,
-    so it opens whatever profile that binary defaults to, which with
-    ``CHROME_PATH`` set is the user's own Chrome. If a browser is already
-    running on it, the new process forwards its command line and exits, leaving
-    a window open and no output. If none is, the probe *is* the browser: it
-    never exits, blocks the launch for the full timeout, and is then killed,
-    which is what makes Chrome offer to restore pages on the user's next start.
-
-    So the guard is off on Windows, deliberately and quietly. There is no half
-    measure available: a version could only come from the executable's own
-    file-version resource, which is separate work.
+    Windows reads the executable's version resource instead, since Chromium
+    may start a normal browser window for an unrecognized ``--version``.
     """
     return os.name != "nt"
 
@@ -347,7 +322,7 @@ def version_of(executable: str) -> BrowserBuild | None:
     # on somebody's own profile; the caller's is about staying quiet. Do not
     # collapse them into one.
     if not a_version_can_be_asked_for():
-        return None
+        return _windows_file_version(executable)
 
     try:
         finished = subprocess.run(
@@ -381,85 +356,89 @@ def version_of(executable: str) -> BrowserBuild | None:
     return build
 
 
-def installed_patchright_version() -> str | None:
-    """The installed patchright distribution, or None when it cannot be named."""
+def _windows_file_version(executable: str) -> BrowserBuild | None:
+    """Read the executable's PE version resource without starting it."""
+    if os.name != "nt":
+        return None
     try:
-        return version("patchright")
-    except PackageNotFoundError:
-        return None
+        import ctypes
+        from ctypes import wintypes
 
+        version_dll = ctypes.WinDLL("version", use_last_error=True)
+        get_size = version_dll.GetFileVersionInfoSizeW
+        get_size.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD)]
+        get_size.restype = wintypes.DWORD
+        get_info = version_dll.GetFileVersionInfoW
+        get_info.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+        ]
+        get_info.restype = wintypes.BOOL
+        query = version_dll.VerQueryValueW
+        query.argtypes = [
+            wintypes.LPCVOID,
+            wintypes.LPCWSTR,
+            ctypes.POINTER(wintypes.LPVOID),
+            ctypes.POINTER(wintypes.UINT),
+        ]
+        query.restype = wintypes.BOOL
 
-def packaged_chromium_version() -> tuple[int, ...] | None:
-    """The Chromium version the installed patchright package says it will launch.
-
-    Read from the driver's ``browsers.json``, which is the revision that
-    package installs. This is not the binary on disk: a stale cache can lag
-    the package, and :func:`version_of` is what asks the binary. Reading the
-    manifest does not start a browser, so it still answers on Windows, where
-    ``--version`` would.
-    """
-    try:
-        import patchright
-    except ImportError:
-        return None
-    manifest = (
-        Path(patchright.__file__).resolve().parent
-        / "driver"
-        / "package"
-        / "browsers.json"
-    )
-    try:
-        payload = json.loads(manifest.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, UnicodeError) as exc:
-        logger.debug("Could not read patchright browsers.json: %s", exc)
-        return None
-    browsers = payload.get("browsers") if isinstance(payload, dict) else None
-    if not isinstance(browsers, list):
-        return None
-    for browser in browsers:
-        if not isinstance(browser, dict) or browser.get("name") != "chromium":
-            continue
-        declared = browser.get("browserVersion")
-        if not isinstance(declared, str):
+        ignored = wintypes.DWORD()
+        size = get_size(executable, ctypes.byref(ignored))
+        if not size:
             return None
-        return parse_version(declared)
-    return None
+        buffer = ctypes.create_string_buffer(size)
+        if not get_info(executable, 0, size, buffer):
+            return None
+        fixed_pointer, fixed_length = wintypes.LPVOID(), wintypes.UINT()
+        if (
+            not query(
+                buffer, "\\", ctypes.byref(fixed_pointer), ctypes.byref(fixed_length)
+            )
+            or fixed_length.value < 16
+        ):
+            return None
+        fixed = ctypes.cast(
+            fixed_pointer, ctypes.POINTER(ctypes.c_uint32 * 13)
+        ).contents
+        if fixed[0] != 0xFEEF04BD:
+            return None
+        ms, ls = fixed[2], fixed[3]
+        browser_version = (ms >> 16, ms & 0xFFFF, ls >> 16, ls & 0xFFFF)
 
-
-def refuse_an_older_packaged_browser(profile_dir: Path) -> None:
-    """Raise if this patchright's Chromium is older than the profile's Last Version.
-
-    Used when the launch will open the packaged browser, not an operator's
-    ``CHROME_PATH``. A newer package is a normal migration. An older one is
-    the downgrade that drops the cookie store, and the error names the
-    installed patchright so the version to install is not a guess.
-
-    Fails open when the manifest cannot be read, for the same reason as
-    :func:`refuse_a_downgrade`: not knowing is not evidence, and the binary
-    check still runs where a version can be asked for.
-    """
-    written_by = profile_was_written_by(profile_dir)
-    if written_by is None:
-        return
-    declared = packaged_chromium_version()
-    if declared is None:
-        logger.warning(
-            "Could not read the Chromium version installed with patchright, "
-            "so this profile's recorded %s cannot be checked against the "
-            "package. If the session stops working after this, an older "
-            "browser may have opened a newer profile.",
-            _render(written_by),
-        )
-        return
-    if declared >= written_by:
-        return
-    package = installed_patchright_version() or "unknown"
-    raise BrowserDowngradeError(
-        profile_version=_render(written_by),
-        browser_version=_render(declared),
-        browser_product=f"patchright {package} Chrome for Testing",
-        profile_dir=profile_dir,
-    )
+        product = ""
+        translations_pointer, translations_length = wintypes.LPVOID(), wintypes.UINT()
+        if (
+            query(
+                buffer,
+                "\\VarFileInfo\\Translation",
+                ctypes.byref(translations_pointer),
+                ctypes.byref(translations_length),
+            )
+            and translations_length.value >= 4
+        ):
+            language, codepage = ctypes.cast(
+                translations_pointer, ctypes.POINTER(ctypes.c_uint16 * 2)
+            ).contents
+            for field in ("ProductName", "FileDescription"):
+                product_pointer, product_length = wintypes.LPVOID(), wintypes.UINT()
+                key = f"\\StringFileInfo\\{language:04x}{codepage:04x}\\{field}"
+                if (
+                    query(
+                        buffer,
+                        key,
+                        ctypes.byref(product_pointer),
+                        ctypes.byref(product_length),
+                    )
+                    and product_length.value
+                ):
+                    product = ctypes.wstring_at(product_pointer).strip()
+                    break
+        return BrowserBuild(product, browser_version)
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
 
 
 def refuse_a_downgrade(profile_dir: Path, executable: str | None) -> None:
@@ -481,15 +460,6 @@ def refuse_a_downgrade(profile_dir: Path, executable: str | None) -> None:
     if executable is None:
         return
 
-    if not a_version_can_be_asked_for():
-        # Before the marker is even read, so that Windows is silent rather than
-        # warning on every single start about a check it can never perform.
-        logger.debug(
-            "No downgrade check on this platform: a browser cannot be asked "
-            "for its version without starting it."
-        )
-        return
-
     written_by = profile_was_written_by(profile_dir)
     if written_by is None:
         return
@@ -498,22 +468,12 @@ def refuse_a_downgrade(profile_dir: Path, executable: str | None) -> None:
     # skips the subprocess entirely rather than spending it to learn nothing.
     about_to_run = version_of(executable)
     if about_to_run is None:
-        # A warning, unlike the two silent returns above it, and unlike the
-        # comparable-product return below. This is the branch where half the
-        # evidence exists and is about to be destroyed: the marker was read,
-        # the launch proceeds, and the older browser rewrites that marker down
-        # to its own number on the way out. The guard can never fire on this
-        # profile again, and without a line here the eventual "session
-        # expired" has nothing anywhere to connect it to. The default log
-        # level is WARNING, so anything quieter is invisible where it matters.
-        logger.warning(
-            "Could not tell which version %s is, so this profile's recorded "
-            "%s cannot be checked against it. If the session stops working "
-            "after this, an older browser may have opened a newer profile.",
-            executable,
-            _render(written_by),
+        raise BrowserDowngradeError(
+            profile_version=_render(written_by),
+            browser_version="unknown",
+            browser_product=f"{executable} (version unavailable)",
+            profile_dir=profile_dir,
         )
-        return
 
     if not is_comparable(about_to_run.product):
         # Info rather than a warning, because this one follows directly from an

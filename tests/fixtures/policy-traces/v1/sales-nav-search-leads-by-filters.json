@@ -32,7 +32,7 @@
     {
       "call": "sales_nav_search_leads_by_filters",
       "kind": "navigate",
-      "landed_url": "https://www.linkedin.com/sales/search/people?query=%28filters%3AList%28%29%2Ckeywords%3AS%C3%A3o%5C%2CPaulo%5C%2C%20CFO%29",
+      "landed_url": "https://www.linkedin.com/sales/search/people?query=%28filters%3AList%28%29%2Ckeywords%3AS%C3%A3o%20Paulo%5C%2C%20CFO%29",
       "requested_url": "https://www.linkedin.com/sales/search/people?query=%28filters%3AList%28%29%2Ckeywords%3AS%C3%A3o%20Paulo%5C%2C%20CFO%29",
       "timeout_ms": 30000,
       "wait_until": "domcontentloaded"

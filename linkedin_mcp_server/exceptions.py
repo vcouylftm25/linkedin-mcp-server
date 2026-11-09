@@ -173,10 +173,22 @@ class BrowserDowngradeError(LinkedInMCPError):
         # and no product name, so which browser wrote it is genuinely unknown.
         # The running one names itself, and is named.
         running = f"{browser_product} {browser_version}".strip()
+        unknown = browser_version == "unknown"
         # "The browser profile", never "this LinkedIn profile". This message
         # surfaces through tools like get_person_profile, where a LinkedIn
         # profile is a member's page and the collision would read as a claim
         # about the person being looked up.
+        if unknown:
+            super().__init__(
+                f"The browser version for {browser_product} could not be "
+                f"determined, so this server cannot safely open the browser "
+                f"profile last opened by version {profile_version}. The profile "
+                f"is kept closed.{where}\n\n"
+                f"To fix this:\n"
+                f"  Use a browser executable with a readable version, or run "
+                f"with --login to create a fresh session."
+            )
+            return
         super().__init__(
             f"The browser profile this server uses was last opened by a "
             f"browser reporting {profile_version}, and the browser about to "

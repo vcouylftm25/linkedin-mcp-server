@@ -27,7 +27,10 @@ from linkedin_mcp_server.linkedin import person as person_module
 from linkedin_mcp_server.linkedin import session as session_module
 from linkedin_mcp_server.linkedin import LinkedInExtractor
 from linkedin_mcp_server.linkedin.fields import COMPANY_SECTIONS, PERSON_SECTIONS
-from linkedin_mcp_server.linkedin.sales_nav_filters import SalesNavFilters
+from linkedin_mcp_server.linkedin.sales_nav_filters import (
+    SalesNavFilters,
+    build_sales_nav_search_url,
+)
 from linkedin_mcp_server.server import create_mcp_server
 
 from .support.policy_trace import (
@@ -982,7 +985,7 @@ async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
             elif method == "sales_nav_search_leads_by_filters":
                 arguments = {"filters": {"keywords": "São Paulo, CFO"}}
                 page.goto_landings.append(
-                    "https://www.linkedin.com/sales/search/people?query=%28filters%3AList%28%29%2Ckeywords%3AS%C3%A3o%5C%2CPaulo%5C%2C%20CFO%29"
+                    build_sales_nav_search_url(SalesNavFilters(**arguments["filters"]))
                 )
                 result = await extractor.sales_nav_search_leads_by_filters(
                     SalesNavFilters(**arguments["filters"])

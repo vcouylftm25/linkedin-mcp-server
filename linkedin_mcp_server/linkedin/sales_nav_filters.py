@@ -20,7 +20,6 @@ class SalesNavFilters:
     function: tuple[str, ...] = ()
     industries: tuple[str, ...] = ()
     geographies: tuple[str, ...] = ()
-    geography_ids: tuple[str, ...] = ()
     company_headcount: tuple[str, ...] = ()
     changed_jobs_90d: bool | None = None
     posted_recently_30d: bool | None = None
@@ -96,19 +95,6 @@ def build_sales_nav_search_url(
         labels = getattr(filters, field_name)
         resolved = [catalog.resolve(filter_type, label) for label in labels]
         display_labels = list(labels)
-        if field_name == "geographies":
-            resolved.extend(
-                {
-                    "filter_type": filter_type,
-                    "id": geo_id,
-                    "label_pt": geo_id,
-                    "label_en": geo_id,
-                    "verified": False,
-                    "source": "Raw geography ID supplied by caller; resolver hook pending live measurement.",
-                }
-                for geo_id in filters.geography_ids
-            )
-            display_labels.extend(filters.geography_ids)
         if resolved:
             rendered = ",".join(
                 f"(id:{_restli_atom(entry['id'])},text:{_restli_atom(label)},selectionType:INCLUDED)"

@@ -1,5 +1,9 @@
 from urllib.parse import parse_qs, unquote
 from datetime import datetime, timedelta, timezone
+from importlib.resources import files
+import json
+from pathlib import Path
+import tomllib
 from typing import cast
 
 import pytest
@@ -61,6 +65,24 @@ def test_restli_url_round_trip_preserves_unicode_and_delimiters():
     assert r"keywords:crédito\, \(private\)\: equity" in query
 
 
+def test_filter_seed_is_packaged_and_readable():
+    resource = files("linkedin_mcp_server").joinpath("linkedin/sales_nav_filters.json")
+    assert json.loads(resource.read_text(encoding="utf-8")) == {
+        "version": 1,
+        "entries": [],
+    }
+
+    pyproject = tomllib.loads(
+        (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert (
+        "linkedin/sales_nav_filters.json"
+        in pyproject["tool"]["setuptools"]["package-data"]["linkedin_mcp_server"]
+    )
+
+
 def test_unknown_label_fails_closed_and_names_nearby_catalog_options():
     catalog = Catalog(
         version=1,
@@ -80,6 +102,11 @@ def test_unknown_label_fails_closed_and_names_nearby_catalog_options():
         build_sales_nav_search_url(
             SalesNavFilters(titles=("Diretor Financeir",)), catalog=catalog
         )
+
+
+def test_geographies_have_only_the_free_text_label_contract():
+    assert "geographies" in SalesNavFilters.__dataclass_fields__
+    assert "geography_ids" not in SalesNavFilters.__dataclass_fields__
 
 
 def test_signals_without_verified_catalog_ids_refuse_to_build():

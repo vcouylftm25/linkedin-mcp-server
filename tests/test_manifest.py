@@ -174,6 +174,11 @@ def test_send_message_documents_lines_and_controls(manifest: dict[str, Any]) -> 
     ) in tools["send_message"]
 
 
+def test_sales_nav_filter_resolver_is_listed(manifest: dict[str, Any]) -> None:
+    tools = {tool["name"] for tool in manifest["tools"]}
+    assert "sales_nav_resolve_filters" in tools
+
+
 def test_no_default_is_itself_a_placeholder(manifest: dict[str, Any]) -> None:
     """A default that names another field only moves the problem.
 

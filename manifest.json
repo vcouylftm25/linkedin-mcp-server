@@ -169,8 +169,12 @@
       "description": "Read up to three pages of Sales Navigator lead search results from a URL copied from the Sales Navigator UI"
     },
     {
+      "name": "sales_nav_resolve_filters",
+      "description": "Resolve free-text Sales Navigator filter labels through visible typeaheads; ambiguous labels return candidates before searching"
+    },
+    {
       "name": "sales_nav_search_leads_by_filters",
-      "description": "Search for leads with structured filters instead of a pasted URL. Filter labels resolve through Sales Navigator's visible typeaheads and a locale-aware 30-day cache. Ambiguous labels return candidates before searching. Returns up to max_results leads across no more than three pages."
+      "description": "Search for leads with structured filters instead of a pasted URL. Geography and other filter labels resolve through Sales Navigator's visible typeaheads and a locale-aware 30-day cache. Ambiguous labels return candidates before searching. Returns up to max_results leads across no more than three pages."
     },
     {
       "name": "sales_nav_status",

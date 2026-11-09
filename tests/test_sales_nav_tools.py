@@ -28,11 +28,15 @@ async def test_filtered_search_accepts_only_the_labels_the_banker_supplied(
     assert tool is not None
     tool_fn = cast(FunctionTool, tool).fn
 
-    result = await tool_fn({"industries": ["Manufacturing"]}, mock_context)
+    result = await tool_fn(
+        {"industries": ["Manufacturing"], "geographies": ["São Paulo"]},
+        mock_context,
+    )
 
     assert result == {"status": "ok", "references": {"search_results": []}}
     model = extractor.sales_nav_search_leads_by_filters.await_args.args[0]
     assert model.industries == ("Manufacturing",)
+    assert model.geographies == ("São Paulo",)
     assert model.seniority == ()
     assert extractor.sales_nav_search_leads_by_filters.await_args.kwargs[
         "state_db_path"
