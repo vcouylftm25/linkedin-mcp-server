@@ -11,12 +11,25 @@
 
 Give your AI agents access to LinkedIn through your own browser session. Read profiles, research companies, find jobs, and manage conversations and connection requests.
 
-> This is an independent open-source project, not affiliated with LinkedIn or Microsoft. LinkedIn is a trademark of LinkedIn Corporation, used here only to identify the service this software interacts with.
+> Independent open-source project. Not affiliated with LinkedIn or Microsoft. LinkedIn is a trademark of LinkedIn Corporation.
 
 <br/>
 <details open>
 <summary><strong>LinkedIn MCP Sponsor</strong></summary>
 <br/>
+<a href="https://linkupapi.com/?utm_source=stickerdaniel" target="_blank">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/df9f3784-4db3-4a30-a908-ca9aae32f54c">
+    <img src="https://github.com/user-attachments/assets/e3a019f0-0dbe-4b91-8e41-684d5ea69893" alt="LinkupAPI, the outreach API for your AI agents" width="100%">
+  </picture>
+</a>
+
+> Running LinkedIn agents in production? [**LinkupAPI**](https://linkupapi.com/?utm_source=stickerdaniel) is the hosted outreach API built for scale, across LinkedIn Classic, Sales Navigator, and Recruiter, plus email, WhatsApp, and iMessage.
+
+[Try LinkupAPI free →](https://linkupapi.com/?utm_source=stickerdaniel)
+
+<br/>
+
 <a href="https://cadenza.page/?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=oss_sponsor&amp;utm_content=banner" target="_blank">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/e7dc04a7-4b2c-4f8f-bffa-77895f02a9b4">
@@ -24,7 +37,7 @@ Give your AI agents access to LinkedIn through your own browser session. Read pr
   </picture>
 </a>
 
-> Prefer not to run a server? [**Cadenza**](https://cadenza.page/?utm_source=github&utm_medium=readme&utm_campaign=oss_sponsor&utm_content=name) is the hosted LinkedIn MCP server for your agents, on web, desktop, and mobile, with 100+ actions across LinkedIn Classic, Sales Navigator, and Recruiter. Request limits are built in, with per-minute and daily budgets you can fine-tune for each action.
+> [**Cadenza**](https://cadenza.page/?utm_source=github&utm_medium=readme&utm_campaign=oss_sponsor&utm_content=name) is the single hosted MCP server for all your LinkedIn needs. It covers Classic, Sales Navigator, and Recruiter with 100+ actions, each within limits you set. Works on web, desktop, and mobile.
 
 Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https://cadenza.page/?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=oss_sponsor&amp;utm_content=cta">Try Cadenza →</a>
 
@@ -40,6 +53,19 @@ Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https
 > This MCP server is supported by [**Unipile**](https://golink.onl/unipile-link). Unipile is the fully managed cloud option for developers: a hosted LinkedIn API for Classic, Sales Navigator, and Recruiter that handles auth, sessions, and infrastructure for you.
 
 [Try Unipile free for 7 days →](https://golink.onl/unipile-free-trial)
+
+<br/>
+
+<a href="https://zernio.link/daniel-sticker" target="_blank">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/f8b34875-c2b7-4466-b430-51fda4875720">
+    <img src="https://github.com/user-attachments/assets/ef30cb05-80a7-4b03-a9d4-186c6db2fe43" alt="Zernio, official APIs for every social channel" width="100%">
+  </picture>
+</a>
+
+> [**Zernio**](https://zernio.link/daniel-sticker) gives your agents official APIs for every social channel. Post, reply, and run ads on Instagram, TikTok, X, YouTube, Threads, and more, through one API or MCP server.
+
+[Try Zernio free →](https://zernio.link/daniel-sticker)
 </details>
 
 ---
@@ -57,50 +83,54 @@ Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https
 
 | Tool | Description |
 |------|-------------|
-| `get_person_profile` | Read profile sections such as experience, education, skills, projects, volunteering, and posts. |
-| `get_my_profile` | Read your own profile, with the same section selection as other profiles. |
-| `connect_with_person` | Preview with `dry_run=true`, or send a connection request with an optional note or accept an incoming one. |
-| `get_sidebar_profiles` | Find recommended profile links, including people you may know. |
-| `get_inbox` | List recent inbox conversations as previews. Does not open threads, so it does not mark them read. `thread_id` is null until you open one. |
-| `get_conversation` | Read one conversation by username or thread ID. Opening it marks that thread read. |
-| `search_conversations` | Search messages by keyword and return previews. Does not open threads, so it does not mark them read. |
-| `archive_conversation` | Archive a conversation by thread ID; a repeat call reports it already archived. |
-| `send_message` | Preview the filled composer with `dry_run=true`, or send after confirmation; profile targets may open a new DM ([#483](https://github.com/stickerdaniel/linkedin-mcp-server/issues/483)). |
+| `get_person_profile` | Read selected sections of a LinkedIn profile. |
+| `get_my_profile` | Read the signed-in user's profile. |
+| `connect_with_person` | Preview or send a connection request; accept incoming requests. |
+| `get_sidebar_profiles` | Find recommended profile links. |
+| `get_inbox` | List conversation previews without opening threads. |
+| `get_conversation` | Read a conversation by username or thread ID. |
+| `search_conversations` | Search messages and return conversation previews. |
+| `archive_conversation` | Archive a conversation by thread ID. |
+| `send_message` | Preview with `dry_run=true` or send a new message. |
+| `reply_to_conversation` | Reply in an existing thread or InMail by thread ID. |
+| `get_company_profile` | Read a company's profile and selected sections. |
+| `get_company_posts` | Read recent posts from a company's feed. |
+| `search_companies` | Find companies by keyword. |
+| `get_company_employees` | Find employees at a company. |
+| `search_jobs` | Find job postings by keyword and location. |
+| `get_saved_jobs` | List saved jobs from the job tracker. |
+| `dismiss_job` | Dismiss a job from search results. |
+| `search_people` | Find people by keyword and profile filters. |
+| `sales_nav_status` | Check access to Sales Navigator. |
+| `sales_nav_search_leads` | Read lead results from a Sales Navigator URL. |
+| `sales_nav_search_leads_by_filters` | Search leads with structured filters. |
+| `sales_nav_search_accounts` | Read account results from a Sales Navigator URL. |
+| `sales_nav_list_leads` | Read saved Sales Navigator leads. |
+| `get_job_details` | Read details from a job posting. |
+| `get_job_apply_url` | Read a job's application type and external link. |
+| `get_easy_apply_form` | Read Easy Apply fields without submitting. |
+| `get_feed` | Read recent posts from your home feed. |
+| `search_posts` | Search posts by keyword and filters. |
+| `create_post` | Preview or publish a feed post. |
+| `get_prospecting_limits` | Read local daily and weekly prospecting limits. |
+| `create_campaign` | Create a local prospecting campaign. |
+| `add_leads` | Add profile leads to a campaign. |
+| `preview_batch` | Preview campaign items and approval hashes. |
+| `approve_batch` | Approve campaign items with an issued token. |
+| `campaign_status` | Read campaign status and pending approvals. |
+| `export_campaign` | Return campaign data as CSV or JSON text. |
+| `get_session_status` | Check saved login and browser state. |
+| `close_session` | Close the browser session without deleting login state. |
 
 Daily write caps default to 20 invitations and 40 messages per local day. Set
 `DAILY_INVITE_LIMIT` and `DAILY_MESSAGE_LIMIT`, or use `--daily-invite-limit`
-and `--daily-message-limit`; `0` disables that cap.
-Campaigns and counters share `prospecting.sqlite3` beside the browser session
-state. If `PROSPECTING_STATE_DIR` or `--prospecting-state-dir` is set, it must
-resolve to that same session-state directory. Campaign tools only edit local
-state; invitation and message execution is not wired in this phase. Daily
-invite, message, and profile-navigation caps are enforced with a weekly invite
-cap. Sales Navigator page loads have a separate limit of 40 per local day.
-| `get_company_profile` | Read company information, with optional sections for posts and open jobs. |
-| `get_company_posts` | Read recent posts from a company's feed, with links to the original posts. |
-| `search_companies` | Find companies by keyword and return links to their LinkedIn profiles. |
-| `get_company_employees` | Find company employees, optionally filtered by name, title, or skill. |
-| `search_jobs` | Find job postings by keyword and location, with job IDs for reading details. |
-| `get_saved_jobs` | List your saved job postings, with job IDs for looking up their details. |
-| `dismiss_job` | Dismiss a job from job search so later searches no longer show it. Irreversible. |
-| `search_people` | Find people by keyword, location, connection degree, and current company. |
-| `sales_nav_status` | Check whether the signed-in browser reaches LinkedIn Sales Navigator. |
-| `sales_nav_search_leads` | Read one page from a Sales Navigator lead-search URL, including visible profile links. |
-| `sales_nav_search_accounts` | Read one page from a Sales Navigator account-search URL, including visible company links. |
-| `sales_nav_list_leads` | Read the first page of saved Sales Navigator leads. |
-| `get_job_details` | Read a job posting's description, requirements, and company details. |
-| `get_job_apply_url` | Check whether a job uses Easy Apply or links to an employer's application. |
-| `get_easy_apply_form` | Read an Easy Apply form: each field's label, type, options and prefilled value. Never types or submits. |
-| `get_feed` | Read recent posts from your home feed, with links to the original posts. |
-| `search_posts` | Search posts by keyword, optionally filtered by recency or content type. |
-| `create_post` | Publish a text post with an optional local image; `dry_run=true` previews and discards it; the current audience is retained; returns `post_url` once published. |
-| `get_prospecting_limits` | Today's used and remaining invites and messages under the local daily caps; read-only. |
-| `create_campaign` | Create a local prospecting campaign; no LinkedIn page is opened. |
-| `add_leads` | Add vanity-based profile records to a campaign, with global deduplication. |
-| `preview_batch` / `approve_batch` | Preview and explicitly approve campaign items; the server issues approval tokens. |
-| `campaign_status` / `export_campaign` | Read campaign state or return CSV/JSON text without writing an export file. |
-| `get_session_status` | Check your saved login and browser state without opening a browser. |
-| `close_session` | Close the shared browser session without deleting your saved login. |
+and `--daily-message-limit`; `0` disables that cap. Campaigns and counters
+share `prospecting.sqlite3` beside the browser session state. If
+`PROSPECTING_STATE_DIR` or `--prospecting-state-dir` is set, it must resolve to
+that same session-state directory. Campaign tools only edit local state;
+invitation and message execution is not wired in this phase. Daily invite,
+message, and profile-navigation caps are enforced with a weekly invite cap.
+Sales Navigator page loads have a separate limit of 40 per local day.
 
 <br/>
 <br/>

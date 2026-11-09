@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server that connects AI assistants to LinkedIn. Access profiles, companies, and job postings through a Docker container.
 
-> **Disclaimer:** This is an independent, community project. It is not affiliated with, authorized by, endorsed by, or sponsored by LinkedIn Corporation or Microsoft. "LinkedIn" is a registered trademark of LinkedIn Corporation and is used here only descriptively to identify the third-party service this software interoperates with.
+> Independent open-source project. Not affiliated with LinkedIn or Microsoft. LinkedIn is a trademark of LinkedIn Corporation.
 
 ## Features
 
@@ -10,7 +10,7 @@ A Model Context Protocol (MCP) server that connects AI assistants to LinkedIn. A
 - **Own Profile**: Fetch the authenticated user's own profile to give agents self-context
 - **Profile Connections**: Preview with `dry_run=true`, or send connection requests or accept incoming ones, with optional notes
 - **Sidebar Profiles**: Extract profile URLs from the sidebar recommendation sections on a profile page ("More profiles for you", "Explore premium profiles", "People you may know")
-- **Messaging**: List the inbox, read a conversation by username or thread ID, search messages by keyword, archive a conversation by thread ID, and preview or send a new message with explicit confirmation (profile-based send may open a separate DM rather than reply in an existing thread)
+- **Messaging**: List the inbox, read a conversation by username or thread ID, search messages by keyword, archive a conversation by thread ID, and compose/send a new message or reply inside an existing thread by thread ID, InMail included, both with explicit confirmation (profile-based send may open a separate DM, so replies go through the thread)
 - **Company Profiles**: Extract comprehensive company data, including the LinkedIn company URN id (used by LinkedIn's people-search `currentCompany` URL facet)
 - **Company Employees**: List employees at a company with optional keyword filtering
 - **Company Search**: Search for companies by keyword

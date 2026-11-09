@@ -362,3 +362,17 @@ class LinkedInExtractor:
             profile_urn=profile_urn,
             dry_run=dry_run,
         )
+
+    async def reply_to_conversation(
+        self,
+        thread_id: str,
+        message: str,
+        *,
+        confirm_send: bool,
+    ) -> dict[str, Any]:
+        """Reply inside an existing thread with explicit confirmation gating."""
+        return await self._message_sender.reply_to_conversation(
+            thread_id,
+            message,
+            confirm_send=confirm_send,
+        )

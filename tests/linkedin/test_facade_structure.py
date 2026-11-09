@@ -61,6 +61,7 @@ PUBLIC_SIGNATURES = {
     "sales_nav_search_accounts": "(self, search_url: 'str', *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'",
     "sales_nav_list_leads": "(self, *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'",
     "send_message": "(self, linkedin_username: 'str', message: 'str', *, confirm_send: 'bool', profile_urn: 'str | None' = None, dry_run: 'bool' = False) -> 'dict[str, Any]'",
+    "reply_to_conversation": "(self, thread_id: 'str', message: 'str', *, confirm_send: 'bool') -> 'dict[str, Any]'",
 }
 
 DELEGATES = {
@@ -97,6 +98,7 @@ DELEGATES = {
     "sales_nav_search_accounts": ("_sales_navigator", "search_accounts"),
     "sales_nav_list_leads": ("_sales_navigator", "list_leads"),
     "send_message": ("_message_sender", "send_message"),
+    "reply_to_conversation": ("_message_sender", "reply_to_conversation"),
 }
 
 DELEGATE_CALLS = {
@@ -130,6 +132,7 @@ DELEGATE_CALLS = {
     "sales_nav_search_accounts": "self._sales_navigator.search_accounts(search_url, max_pages=max_pages, charge=charge)",
     "sales_nav_list_leads": "self._sales_navigator.list_leads(max_pages=max_pages, charge=charge)",
     "send_message": "self._message_sender.send_message(linkedin_username, message, confirm_send=confirm_send, profile_urn=profile_urn, dry_run=dry_run)",
+    "reply_to_conversation": "self._message_sender.reply_to_conversation(thread_id, message, confirm_send=confirm_send)",
 }
 
 FACADE_STATE = {

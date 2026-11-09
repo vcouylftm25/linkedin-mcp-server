@@ -72,6 +72,7 @@ TOOL_DELEGATES = {
     "sales_nav_list_leads": "sales_nav_list_leads",
     "create_post": "create_post",
     "send_message": "send_message",
+    "reply_to_conversation": "reply_to_conversation",
 }
 
 
