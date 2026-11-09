@@ -1,45 +1,39 @@
-# Sales Navigator filter validation (10 minutes)
+# Sales Navigator filter validation (first real use)
 
-Read-only session with the banker. Do not save a search, add a lead, or change
-any account setting. Compare only the URL produced by the UI and by the local
-builder; do not open the generated link from this checklist.
+There is no filter-ID mapping session. The banker supplies ordinary free-text
+labels at use time, and `sales_nav_resolve_filters` reads the suggestions shown
+by Sales Navigator. The first real use is the validation opportunity: observe
+whether the UI produces a unique suggestion, whether ambiguity is returned
+without guessing, and whether every chosen filter remains in the final search
+URL. Do not save a search, add a lead, or change an account setting.
 
-## Before the session
+## Before the first use
 
-- Confirm the banker has Sales Navigator open and can run a people search.
-- Have this checklist and the builder output for each planned search at hand.
-- Use a local, synthetic `sales_nav_search_leads_by_filters` call first. It
-  returns an explicit catalog error when a requested label is not yet known.
+- The banker has Sales Navigator open and can run a people search.
+- Use the normal request, for example: “diretores financeiros de indústria em
+  SP, 500+ funcionários”.
+- `sales_nav_search_leads_by_filters` resolves uncached labels through the
+  visible typeahead and charges one Sales Navigator navigation for that batch.
+  Unique exact matches can proceed; multiple candidates return
+  `needs_clarification` for the banker to choose; no candidate means no search.
+- `sales_nav_filters.json` may seed known values, but no hand-maintained catalog
+  is required.
 
-## Ten-minute sequence
+## Observe and record
 
-1. **0–2 min — CFO / São Paulo.** In the UI, select current title `CFO` and
-   geography `São Paulo`; copy the resulting URL. Record the exact filter
-   labels and the UI URL in the review notes, with account identifiers removed.
-2. **2–4 min — Seniority / industry.** Select one seniority and one industry
-   the banker commonly uses. Copy the URL and record each visible label.
-3. **4–6 min — Headcount / recent signal.** Select one company size and, if
-   available in this account, “changed jobs in the last 90 days” or a recent
-   posting signal. Copy the URL. Mark controls unavailable on this account as
-   unavailable, not as an empty result.
-4. **6–8 min — Compare.** Decode each URL's `query` parameter once. Compare
-   Rest.li filter `type`, `id`, `text`, and `selectionType` values. Compare the
-   builder output to the UI URL after percent-decoding; ignore ordering and
-   session-only parameters, but require every requested filter ID to remain.
-   The read tool independently fails if a requested filter type or ID is
-   absent from the landed URL.
-5. **8–10 min — Review catalog candidates.** Add an entry only when the exact
-   filter type and ID are confirmed by the captured UI URL. Record `source` as
-   `measured:<date>` (account identifiers removed). Set `verified: true` only
-   after the banker reruns the same search and the builder's URL lands on the
-   same result count shown in the UI. A public source may be added as extra
-   context but is not required: a URL captured from the live UI is the stronger
-   evidence.
+1. Record the request's filter types and labels, with account identifiers
+   removed.
+2. For ambiguous labels, confirm the returned candidate IDs and labels match
+   what the UI rendered. The Claude asks the banker which candidate they mean;
+   it does not choose one.
+3. After a resolved search, compare the requested IDs in the Rest.li `query`
+   with the final URL. A missing type or ID must fail closed; the corresponding
+   cached mapping is invalidated for the next use.
+4. Record the UI locale, whether suggestions were unique or ambiguous, and any
+   mismatch between the visible selection and the final URL.
+5. Keep any capture anonymized. The committed DOM fixture is explicitly
+   synthetic and must be replaced by an anonymized capture when one is approved
+   and available.
 
-## Candidate comparison record
-
-For each candidate, retain `filter_type`, `id`, `label_pt`, `label_en`, source
-URL/title and access date, observed UI label, and the decoded URL fragment. Do
-not infer IDs from nearby labels or from another account's URL. Geography stays
-on the resolver hook until its typeahead IDs are measured; callers may supply a
-raw geography ID for a one-off read-only lookup.
+This observation validates the first real use. It does not create a continuing
+manual mapping task or require catalog entries to unlock later searches.

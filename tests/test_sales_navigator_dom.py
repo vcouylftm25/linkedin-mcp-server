@@ -10,12 +10,21 @@ import pytest
 from patchright.async_api import async_playwright
 
 from linkedin_mcp_server.linkedin import LinkedInExtractor
+from linkedin_mcp_server.linkedin.sales_nav_resolver import (
+    SalesNavFilterCache,
+    SalesNavFilterResolver,
+)
+from linkedin_mcp_server.linkedin.session import PageSession
 
 pytestmark = [pytest.mark.browser_dom, pytest.mark.xdist_group("browser_runtime")]
 
 ROOT = Path(__file__).resolve().parent
 FIXTURE = ROOT / "fixtures" / "linkedin" / "sales_nav_results.html"
 HTML = FIXTURE.read_text(encoding="utf-8")
+TYPEAHEAD_FIXTURE = (
+    ROOT / "fixtures" / "linkedin" / "sales_nav_typeahead_synthetic.html"
+)
+TYPEAHEAD_HTML = TYPEAHEAD_FIXTURE.read_text(encoding="utf-8")
 
 
 @pytest.fixture
@@ -103,3 +112,39 @@ async def test_saved_lead_list_returns_rendered_text_and_profile_reference(
 
     assert "Executive leadership" in result["sections"]["search_results"]
     assert result["leads"][0]["sales_lead_url"].startswith("/sales/lead/")
+
+
+async def test_live_filter_resolver_reads_synthetic_rendered_suggestions(tmp_path):
+    """Synthetic UI algorithm fixture; replace with anonymized capture when available."""
+    async with async_playwright() as playwright:
+        try:
+            browser = await playwright.chromium.launch(
+                channel="chromium", headless=True
+            )
+            page = await browser.new_page()
+        except Exception as exc:
+            pytest.skip(f"chromium unavailable: {exc}")
+        await page.route(
+            "https://www.linkedin.com/**",
+            lambda route: route.fulfill(content_type="text/html", body=TYPEAHEAD_HTML),
+        )
+        await page.goto("https://www.linkedin.com/sales/search/people")
+        charges = []
+        resolver = SalesNavFilterResolver(
+            PageSession(page),
+            SalesNavFilterCache(str(tmp_path / "prospecting.sqlite3")),
+        )
+        try:
+            result = await resolver.resolve(
+                {"INDUSTRY": ["Indústria de"]}, charge=charges.append
+            )
+        finally:
+            await browser.close()
+
+    assert charges == ["sales_nav"]
+    assert result["locale"] == "pt-br"
+    assert result["results"][0]["status"] == "ambiguous"
+    assert {item["id"] for item in result["results"][0]["candidates"]} == {
+        "industry-42",
+        "industry-43",
+    }

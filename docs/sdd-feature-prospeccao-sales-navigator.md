@@ -39,7 +39,7 @@ O consumidor é o **Claude do banker** (via MCP/CLI); a estratégia (quem aborda
 - **Restrição:** roda local na máquina do banker com a sessão dele (`~/.linkedin-mcp`); nenhum dado de lead sai para serviço externo não homologado; nada de token/cookie/.env no repo; secret scan antes de push.
 - **Restrição:** só UI/DOM e dados que a própria página já buscou; sem chamar APIs privadas (Voyager/Sales API) diretamente, sem interceptar requests de escrita (decisão do repo de 2026-09-16).
 - **Restrição:** testes de envio só em dry-run; e2e com envio real somente com ok do Victor item a item.
-- **Premissa:** a conta do banker tem Sales Navigator ativo; o Victor não tem — mapeamento de DOM/filtros exige sessão assistida com o banker.
+- **Premissa:** a conta do banker tem Sales Navigator ativo; o Victor não tem — observar o primeiro uso real depende do fluxo normal do banker, mas não há sessão dedicada de mapeamento de filtros.
 - **Premissa:** Python (stack do upstream), patchright 1.64.3 fixo.
 
 ## 4. Fora do Escopo
@@ -55,7 +55,7 @@ O consumidor é o **Claude do banker** (via MCP/CLI); a estratégia (quem aborda
 | Decisão | Escolha | Racional |
 |---|---|---|
 | Entrada da busca | Filtros estruturados → URL do Sales Navigator montada pelo CLI (URL colada continua aceita) | Banker parte de filtros; URL colada não serve ao fluxo real. |
-| IDs de filtro | Replay de URL capturada na conta do banker + catálogo versionado (`sales_nav_filters.json`) validado na fase 1; o reader confere que os filtros constam na URL resultante (fail-closed) | Senioridade/setor/região são IDs de typeahead, não rótulos; sem conferência o LinkedIn devolve busca sem filtro com cara de filtrada. |
+| IDs de filtro | Resolver rótulos em tempo de uso na typeahead renderizada do Sales Navigator; cache local SQLite por tipo/rótulo normalizado/locale, TTL de 30 dias; o JSON é apenas seed opcional | O banker descreve o ICP em texto livre. IDs vêm das sugestões visíveis; ambiguidade volta como candidatos e nunca é adivinhada. A busca confere IDs no URL final e invalida cache se algum filtro sumir. |
 | Estado | Estender o SQLite de `ProspectingLimits` (tabelas novas), com root fixo ao lado da sessão e conferido no start | Fonte única de tetos e idempotência; root divergente entre MCP e `launchd` reenviaria lotes. |
 | Detecção de aceite | Hipótese: polling da lista de conexões recentes (a medir na fase 1). Fallback: releitura dos `invited` com teto de páginas por tick | Sem webhook; lista é da conta inteira e pode não ter ordenação/vanity estrutural — decidir com captura real. |
 | Envio | Chave **única global** `(lead_vanity, kind)` com estado `*_unconfirmed` gravado antes do clique; reconciliação por releitura (`detect_connection_state`) antes de qualquer retry | `reserve` atual só conta cota; sem estado ambíguo a retomada reenvia. |
@@ -83,7 +83,7 @@ Camadas: domínio puro (`prospecting/domain.py`: estados e transições), reposi
 
 **Contratos centrais:**
 
-A busca estruturada inicial é `sales_nav_search_leads_by_filters`, somente leitura, com construção Rest.li e reuso do `SalesNavigatorReader`. O catálogo versionado começa vazio enquanto não houver fontes citáveis para IDs; rótulos desconhecidos e sinais sem ID medido falham fechados. A URL final é conferida também nos filtros aninhados em `query`, não apenas pela presença do parâmetro externo.
+A busca estruturada é `sales_nav_search_leads_by_filters`, somente leitura, com construção Rest.li e reuso do `SalesNavigatorReader`. `sales_nav_resolve_filters` aceita rótulos livres organizados por tipo, visita uma vez a busca de pessoas para o lote e lê as sugestões renderizadas; o cache fica no mesmo `prospecting.sqlite3` do estado de prospecção e distingue o locale da conta. Cada visita de resolução reserva uma navegação `sales_nav`. Um match exato único pode ser usado; múltiplos candidatos retornam `needs_clarification` para o Claude perguntar ao banker; sem candidato, não há busca. A URL final é conferida também nos filtros aninhados em `query`, não apenas pela presença do parâmetro externo. Se um ID solicitado não sobreviver à navegação, a entrada correspondente é removida do cache.
 
 ```json
 // sales_nav_search_leads (entrada)
@@ -118,8 +118,8 @@ Estados do lead: `imported → invite_approved → invited → accepted → mess
 | Fase | Objetivo | Validação observável | Estimativa |
 |---|---|---|---|
 | 0 — Correções base (frente A, paralela, não bloqueia) | Lookup de conversa independente de idioma, leitura sem marcar lida, guarda de versão do browser | Testes falham sem o fix; inbox lida sem alterar não-lidas | 1 dia |
-| 1 — Medição na conta do banker | Sessão assistida, só leitura: capturar (anonimizado) busca de leads, lista de conexões recentes e URL com filtros; ver se a página traz `/in/` ou só `/sales/lead/` e se a URL sobrevive sem `sessionId` | Fixtures reais anonimizados no repo; decisão registrada sobre filtros e polling | 0,5 dia + agenda |
-| 2 — Busca real | Classificar `/sales/lead|company/`, leads estruturados com vanity `/in/`, status com paywall, paginação; filtros = replay de URL capturada + catálogo validado | Busca na conta do banker → leads batendo com a tela; teste falha se o classificador sumir | 2–3 dias |
+| 1 — Primeiro uso observado | Durante o uso normal, observar (anonimizado) rótulos e sugestões da busca, retenção dos filtros na URL, links de lead e a lista de conexões recentes | Primeiro uso observado e diferenças registradas; sem sessão dedicada de mapeamento nem catálogo manual; decisão sobre polling de aceite | Durante o uso normal |
+| 2 — Busca real | Classificar `/sales/lead|company/`, leads estruturados com vanity `/in/`, status com paywall, paginação; filtros resolvidos pela typeahead e validados na URL final | Busca na conta do banker → leads e filtros batendo com a tela; teste falha se o classificador sumir | 2–3 dias |
 | 3 — Campanha + proteções | Domínio, SQLite no mesmo root da sessão, chave única `(lead_vanity)` global, estados ambíguos, disjuntor de conta, teto semanal, lease exclusivo, aprovação por item | Dry-run de 50 sem browser de escrita; **1 convite real com kill no meio → retomada não reenvia** | 3 dias |
 | 4 — Convites em lote | Envio em lote via fila retomável (fora do timeout de 180 s da tool), export, auditoria | 3 convites reais aprovados pelo Victor; tetos respeitados | 1–2 dias |
 | 5 — Aceite | Polling da lista de conexões se a medição da fase 1 provar viável; senão releitura dos `invited` com teto de páginas por tick | Aceite detectado ≤30 min sem falso positivo | 2 dias |
@@ -141,7 +141,7 @@ Estados do lead: `imported → invite_approved → invited → accepted → mess
 | Risco | Mitigação | Dono |
 |---|---|---|
 | Restrição/ban da conta do banker (Help Center trata automação como motivo de restrição; risco não zera com tetos) | Tetos diário+semanal, orçamento de navegações (visitas contam), disjuntor 24 h, tick só sem sessão interativa; banker ciente e de acordo | Victor |
-| DOM do Sales Navigator muda | Catálogo e seletores versionados, fixtures reais anonimizados, erro explícito | Dev |
+| DOM do Sales Navigator muda | Resolver por estrutura genérica, fixture sintético identificado até existir captura anonimizada, erro explícito e cache com TTL | Dev |
 | Sem licença para testar | Sessões assistidas com o banker; fixtures capturadas e anonimizadas | Victor |
 | Compliance da 1ª abordagem | Templates aprovados por compliance; auditoria de todo envio | Victor / Compliance |
 | Dados pessoais de leads (LGPD) | Local, sem envio externo, retenção definida, export controlado | Victor |
@@ -152,4 +152,4 @@ Estados do lead: `imported → invite_approved → invited → accepted → mess
 2. **Decisão necessária:** tetos finais (convites/dia e semana) — proposta 20/dia, 100/semana. — dono Victor + banker.
 3. **Decisão necessária:** retenção dos dados de lead no SQLite (LGPD). — dono Victor.
 4. Medir baseline com o banker: tempo/dia, convites/semana, taxa de aceite, tempo até 1ª mensagem. — dono Victor, antes da fase 4.
-5. Agendar sessão de mapeamento do Sales Navigator com o banker (fase 1).
+5. Observar o primeiro uso normal do Sales Navigator com o banker (fase 1), sem exigir uma sessão separada para mapear IDs.

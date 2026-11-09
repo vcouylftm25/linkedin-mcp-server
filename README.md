@@ -103,7 +103,8 @@ Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https
 | `search_people` | Find people by keyword and profile filters. |
 | `sales_nav_status` | Check access to Sales Navigator. |
 | `sales_nav_search_leads` | Read lead results from a Sales Navigator URL. |
-| `sales_nav_search_leads_by_filters` | Search leads with structured filters. |
+| `sales_nav_resolve_filters` | Resolve free-text filter labels via Sales Navigator typeahead; ambiguous labels return candidates. |
+| `sales_nav_search_leads_by_filters` | Search leads from free-text filter labels, with a local 30-day cache. |
 | `sales_nav_search_accounts` | Read account results from a Sales Navigator URL. |
 | `sales_nav_list_leads` | Read saved Sales Navigator leads. |
 | `get_job_details` | Read details from a job posting. |

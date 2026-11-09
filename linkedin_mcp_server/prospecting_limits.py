@@ -18,6 +18,7 @@ import uuid
 from contextlib import closing
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from linkedin_mcp_server.error_handler import CodedToolError, ErrorCode
@@ -56,6 +57,7 @@ class ProspectingLimits:
         navigation_limit: int = DEFAULT_DAILY_NAVIGATION_LIMIT,
         sales_nav_limit: int = DEFAULT_SALES_NAV_DAILY_NAVIGATIONS,
         db_path: str | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         root = (
             Path(state_dir).expanduser()
@@ -82,6 +84,7 @@ class ProspectingLimits:
             "navigation": 0,
             "sales_nav": 0,
         }
+        self._clock = clock or (lambda: datetime.now().astimezone())
 
     def _open(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +95,7 @@ class ProspectingLimits:
 
     def reserve(self, kind: str) -> str:
         """Reserve a slot before browser acquisition; unresolved slots stay counted."""
-        now = datetime.now().astimezone()
+        now = self._clock().astimezone()
         with closing(self._open()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             return self.insert_reservation(db, kind, now)
@@ -211,7 +214,7 @@ class ProspectingLimits:
         A limit of 0 means unlimited, so its remaining count is None. Reading
         does not create the database.
         """
-        now = datetime.now().astimezone()
+        now = self._clock().astimezone()
         day = now.date().isoformat()
         reset = datetime.combine(
             now.date() + timedelta(days=1), datetime.min.time()

@@ -1,6 +1,7 @@
 """Daily write caps have a persistent, browser-free contract."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import cast
 import sqlite3
 from unittest.mock import patch
 
@@ -152,6 +153,18 @@ def test_sales_nav_navigations_have_a_separate_daily_cap(tmp_path):
     }
     assert DEFAULT_SALES_NAV_DAILY_NAVIGATIONS == 40
     assert ProspectingLimits(1, 1, str(tmp_path / "default")).limits["sales_nav"] == 40
+
+
+def test_report_and_reserve_share_the_injected_clock(tmp_path):
+    now = datetime(2026, 11, 3, 12, tzinfo=timezone.utc)
+    limits = ProspectingLimits(1, 1, str(tmp_path), clock=lambda: now)
+
+    limits.reserve(SALES_NAV_NAVIGATION_KIND)
+    report = limits.report()
+
+    assert report["day"] == "2026-11-03"
+    usage = cast(dict[str, int | None], report["sales_nav"])
+    assert usage["used"] == 1
 
 
 async def test_get_prospecting_limits_tool_reads_without_a_browser(tmp_path):

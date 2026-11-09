@@ -40,6 +40,7 @@ a page-owning collaborator.
 | `profile_page` | `MessageTarget`, `MessageTargetResolution`, `ProfilePageReader`, `ReadMessageTarget` | `browser-free` |
 | `sales_nav_filters` | `Catalog`, `FILTER_FIELDS`, `SalesNavFilterError`, `SalesNavFilters`, `build_sales_nav_search_url()` | `browser-free` |
 | `sales_nav_read` | `LOGIN_WALL_PATHS`, `MAX_SALES_NAV_PAGES`, `PAYWALL_PATHS`, `PRODUCT_SURFACES`, `SALES_NAV_NAVIGATION_KIND`, `STATUS_MESSAGE`, `SalesNavAccess`, `classify_sales_nav_access()`, `landed_on_requested_page()`, `missing_filter_keys()`, `page_of()`, `parse_sales_leads()`, `require_max_pages()`, `url_with_page()` | `browser-free` |
+| `sales_nav_resolver` | `CACHE_TTL`, `FILTER_UI_LABELS`, `SalesNavFilterCache`, `SalesNavFilterResolver`, `candidate_result()`, `normalize_filter_label()` | `page-owning` |
 | `sales_navigator` | `MAX_RESULTS_PER_CALL`, `NavigationCharge`, `SALES_NAV_ACCOUNT_SEARCH_PATH`, `SALES_NAV_HOME_URL`, `SALES_NAV_LEAD_SEARCH_PATH`, `SALES_NAV_SAVED_LEADS_URL`, `SalesNavigatorReader`, `validate_sales_nav_url()` | `page-owning` |
 | `search_urls` | `CONTENT_DATE_POSTED_MAP`, `CONTENT_TYPE_MAP`, `EXPERIENCE_LEVEL_MAP`, `JOB_DATE_POSTED_MAP`, `JOB_TYPE_MAP`, `NETWORK_TOKENS`, `SORT_BY_MAP`, `WORK_TYPE_MAP`, `build_company_search_url()`, `build_content_search_url()`, `build_job_search_url()`, `build_people_search_url()` | `browser-free` |
 | `session` | `NAV_DELAY`, `PageSession` | `page-owning` |
@@ -72,7 +73,8 @@ a page-owning collaborator.
 - `profile_page` -> `session`
 - `sales_nav_filters` -> _(none)_
 - `sales_nav_read` -> `link_metadata`
-- `sales_navigator` -> `capture`, `contracts`, `link_metadata`, `sales_nav_filters`, `sales_nav_read`, `session`
+- `sales_nav_resolver` -> `sales_nav_filters`, `sales_nav_read`, `session`
+- `sales_navigator` -> `capture`, `contracts`, `link_metadata`, `sales_nav_filters`, `sales_nav_read`, `sales_nav_resolver`, `session`
 - `search_urls` -> `contracts`
 - `session` -> _(none)_
 - `text` -> _(none)_
@@ -100,6 +102,7 @@ a page-owning collaborator.
 - `read_person`
 - `reply_to_conversation`
 - `sales_nav_list_leads`
+- `sales_nav_resolve_filters`
 - `sales_nav_search_accounts`
 - `sales_nav_search_leads`
 - `sales_nav_search_leads_by_filters`

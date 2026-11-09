@@ -1,4 +1,6 @@
 from urllib.parse import parse_qs, unquote
+from datetime import datetime, timedelta, timezone
+from typing import cast
 
 import pytest
 
@@ -10,6 +12,13 @@ from linkedin_mcp_server.linkedin.sales_nav_filters import (
 )
 from linkedin_mcp_server.linkedin.sales_nav_read import _restli_query
 from linkedin_mcp_server.linkedin.sales_nav_read import missing_filter_keys
+from linkedin_mcp_server.linkedin.sales_nav_resolver import (
+    SalesNavFilterCache,
+    SalesNavFilterResolver,
+    _prefer_response_candidates,
+    candidate_result,
+)
+from linkedin_mcp_server.linkedin.session import PageSession
 
 
 def test_restli_url_round_trip_preserves_unicode_and_delimiters():
@@ -78,3 +87,87 @@ def test_filter_loss_is_detected_inside_a_still_present_query_parameter():
     )
 
     assert missing_filter_keys(requested, landed) == ("INDUSTRY:42",)
+
+
+def test_live_candidates_resolve_only_a_unique_exact_label():
+    candidates = [
+        {"id": "industry-1", "label": "Indústria de transformação"},
+        {"id": "industry-2", "label": "Indústria"},
+    ]
+
+    resolved = candidate_result("INDUSTRY", " Indústria ", candidates)
+    ambiguous = candidate_result("INDUSTRY", "indústria de", candidates)
+
+    assert resolved["status"] == "resolved"
+    assert resolved["resolved"]["id"] == "industry-2"
+    assert ambiguous["status"] == "ambiguous"
+    assert {item["id"] for item in ambiguous["candidates"]} == {
+        "industry-1",
+        "industry-2",
+    }
+
+
+def test_page_fetched_response_id_is_preferred_for_the_rendered_option():
+    result = _prefer_response_candidates(
+        [{"id": "dom-id", "label": "Indústria"}],
+        [{"options": [{"id": "response-id", "label": "Indústria"}]}],
+    )
+
+    assert result == [{"id": "response-id", "label": "Indústria"}]
+
+
+def test_filter_cache_is_locale_scoped_expires_and_invalidates_missing_ids(tmp_path):
+    now = [datetime(2026, 11, 3, tzinfo=timezone.utc)]
+    cache = SalesNavFilterCache(
+        str(tmp_path / "prospecting.sqlite3"), clock=lambda: now[0]
+    )
+    value = {"filter_type": "INDUSTRY", "id": "42", "label": "Industry"}
+    cache.put("INDUSTRY", " Industry ", "en-US", value)
+
+    assert cache.get("INDUSTRY", "industry", "en-US") == value
+    assert cache.get("INDUSTRY", "industry", "pt-BR") is None
+    cache.invalidate_ids(("INDUSTRY:42",))
+    assert cache.get("INDUSTRY", "industry", "en-US") is None
+
+    cache.put("INDUSTRY", "industry", "en-US", value)
+    now[0] += timedelta(days=31)
+    assert cache.get("INDUSTRY", "industry", "en-US") is None
+
+
+async def test_resolver_batches_uncached_labels_into_one_navigation(tmp_path):
+    class FakeSession:
+        async def run_on_linkedin(self, _script, arg=None):
+            if arg is None:
+                return "pt-BR"
+            return {
+                "locale": "pt-BR",
+                "options": [
+                    {
+                        "filter_type": request["filter_type"],
+                        "query": request["query"],
+                        "candidates": [
+                            {"id": request["query"], "label": request["query"]}
+                        ],
+                    }
+                    for request in arg
+                ],
+            }
+
+    visits = []
+
+    async def navigate(charge):
+        charge("sales_nav")
+        visits.append("people-search")
+
+    resolver = SalesNavFilterResolver(
+        cast(PageSession, FakeSession()),
+        SalesNavFilterCache(str(tmp_path / "prospecting.sqlite3")),
+        navigate,
+    )
+    result = await resolver.resolve(
+        {"SENIORITY_LEVEL": ["Diretor"], "INDUSTRY": ["Indústria"]},
+        charge=visits.append,
+    )
+
+    assert visits == ["sales_nav", "people-search"]
+    assert [item["status"] for item in result["results"]] == ["resolved", "resolved"]

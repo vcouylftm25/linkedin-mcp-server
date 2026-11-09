@@ -100,10 +100,23 @@ class LinkedInExtractor:
         *,
         max_pages: int = 1,
         charge: Callable[[str], object] | None = None,
+        state_db_path: str | None = None,
     ) -> dict[str, Any]:
         """Read Sales Navigator leads from structured filter input."""
         return await self._sales_navigator.search_leads_by_filters(
-            filters, max_pages=max_pages, charge=charge
+            filters, max_pages=max_pages, charge=charge, state_db_path=state_db_path
+        )
+
+    async def sales_nav_resolve_filters(
+        self,
+        labels: dict[str, list[str]],
+        *,
+        state_db_path: str,
+        charge: Callable[[str], object] | None = None,
+    ) -> dict[str, Any]:
+        """Resolve Sales Navigator filter labels through its rendered UI."""
+        return await self._sales_navigator.resolve_filters(
+            labels, state_db_path=state_db_path, charge=charge
         )
 
     async def sales_nav_search_accounts(
