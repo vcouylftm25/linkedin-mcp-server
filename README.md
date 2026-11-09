@@ -86,6 +86,8 @@ cap. Sales Navigator page loads have a separate limit of 40 per local day.
 | `search_people` | Find people by keyword, location, connection degree, and current company. |
 | `sales_nav_status` | Check whether the signed-in browser reaches LinkedIn Sales Navigator. |
 | `sales_nav_search_leads` | Read one page from a Sales Navigator lead-search URL, including visible profile links. |
+| `sales_nav_resolve_filters` | Resolve free-text Sales Navigator filter labels through visible typeahead suggestions; ambiguous labels return candidates. |
+| `sales_nav_search_leads_by_filters` | Search Sales Navigator leads from free-text filter labels, with a local 30-day cache and final URL filter checks. |
 | `sales_nav_search_accounts` | Read one page from a Sales Navigator account-search URL, including visible company links. |
 | `sales_nav_list_leads` | Read the first page of saved Sales Navigator leads. |
 | `get_job_details` | Read a job posting's description, requirements, and company details. |

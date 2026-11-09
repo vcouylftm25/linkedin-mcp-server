@@ -22,8 +22,14 @@ from linkedin_mcp_server.linkedin.sales_nav_read import (
     url_with_page,
 )
 from linkedin_mcp_server.linkedin.sales_nav_filters import (
+    Catalog,
+    FILTER_FIELDS,
     SalesNavFilters,
     build_sales_nav_search_url,
+)
+from linkedin_mcp_server.linkedin.sales_nav_resolver import (
+    SalesNavFilterCache,
+    SalesNavFilterResolver,
 )
 from linkedin_mcp_server.linkedin.session import NAV_DELAY, PageSession
 
@@ -151,6 +157,7 @@ class SalesNavigatorReader:
         *,
         max_pages: int = 1,
         charge: NavigationCharge | None = None,
+        filter_cache: SalesNavFilterCache | None = None,
     ) -> dict[str, Any]:
         """Read up to `max_pages` of leads from a Sales Navigator search URL."""
         url = validate_sales_nav_url(search_url, SALES_NAV_LEAD_SEARCH_PATH)
@@ -161,6 +168,7 @@ class SalesNavigatorReader:
             "leads",
             max_pages=_checked_max_pages(max_pages),
             charge=charge,
+            filter_cache=filter_cache,
         )
 
     async def search_leads_by_filters(
@@ -169,11 +177,94 @@ class SalesNavigatorReader:
         *,
         max_pages: int = 1,
         charge: NavigationCharge | None = None,
+        state_db_path: str | None = None,
     ) -> dict[str, Any]:
-        """Build a structured search URL, then use the standard checked reader."""
-        return await self.search_leads(
-            build_sales_nav_search_url(filters), max_pages=max_pages, charge=charge
+        """Resolve labels live, then build and validate the structured search."""
+        labels = {
+            key: list(getattr(filters, key))
+            for key in (
+                "titles",
+                "seniority",
+                "function",
+                "industries",
+                "geographies",
+                "company_headcount",
+                "years_in_role",
+            )
+            if getattr(filters, key)
+        }
+        if labels:
+            if state_db_path is None:
+                raise ValueError(
+                    "Prospecting state database path is required for filter resolution."
+                )
+            resolver = SalesNavFilterResolver(
+                self._session,
+                SalesNavFilterCache(state_db_path),
+                navigate=self._navigate_filter_page,
+            )
+            resolved = await resolver.resolve(
+                {FILTER_FIELDS[key]: value for key, value in labels.items()},
+                charge=charge,
+            )
+            unresolved = [
+                item for item in resolved["results"] if item["status"] != "resolved"
+            ]
+            if unresolved:
+                return {"status": "needs_clarification", "filter_resolutions": resolved}
+            entries = tuple(
+                {
+                    "filter_type": item["filter_type"],
+                    "id": item["resolved"]["id"],
+                    "label_pt": item["resolved"]["label"],
+                    "label_en": item["resolved"]["label"],
+                    "verified": True,
+                    "source": "Sales Navigator rendered typeahead",
+                }
+                for item in resolved["results"]
+            )
+            catalog = Catalog(version=1, entries=entries)
+        else:
+            catalog = Catalog.load()
+        cache = (
+            SalesNavFilterCache(state_db_path)
+            if labels and state_db_path is not None
+            else None
         )
+        return await self.search_leads(
+            build_sales_nav_search_url(filters, catalog=catalog),
+            max_pages=max_pages,
+            charge=charge,
+            filter_cache=cache,
+        )
+
+    async def resolve_filters(
+        self,
+        labels: dict[str, list[str]],
+        *,
+        state_db_path: str,
+        charge: NavigationCharge | None = None,
+    ) -> dict[str, Any]:
+        """Resolve a batch in one rendered people-search page visit."""
+        mapped = {FILTER_FIELDS.get(key, key): value for key, value in labels.items()}
+        return await SalesNavFilterResolver(
+            self._session,
+            SalesNavFilterCache(state_db_path),
+            navigate=self._navigate_filter_page,
+        ).resolve(mapped, charge=charge)
+
+    async def _navigate_filter_page(self, charge) -> None:
+        await self._capture_page(
+            "https://www.linkedin.com/sales/search/people",
+            "sales_nav_filter_resolution",
+            CapturePlan(max_scrolls=0),
+            charge,
+        )
+        if not _on_sales_nav_route(self._session.page.url, SALES_NAV_LEAD_SEARCH_PATH):
+            raise CodedToolError(
+                "Sales Navigator access was not confirmed for filter resolution.",
+                ErrorCode.NOT_FOUND,
+            )
 
     async def search_accounts(
         self,
@@ -218,6 +309,7 @@ class SalesNavigatorReader:
         *,
         max_pages: int,
         charge: NavigationCharge | None,
+        filter_cache: SalesNavFilterCache | None = None,
     ) -> dict[str, Any]:
         start = _checked_page(requested_url)
         seen: set[str] = set()
@@ -258,6 +350,8 @@ class SalesNavigatorReader:
                 )
             missing = missing_filter_keys(requested_url, landed)
             if missing:
+                if filter_cache is not None:
+                    filter_cache.invalidate_ids(missing)
                 raise CodedToolError(
                     "Sales Navigator dropped requested filter parameters "
                     f"({', '.join(missing)}) from the final URL, so no "

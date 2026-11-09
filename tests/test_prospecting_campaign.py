@@ -53,8 +53,10 @@ NOW = datetime(2026, 11, 3, 12, tzinfo=timezone.utc)
 DEADLINE = (NOW + timedelta(hours=24)).isoformat()
 
 
-def _campaign(tmp_path):
-    limits = ProspectingLimits(20, 40, str(tmp_path), weekly_invite_limit=100)
+def _campaign(tmp_path, *, clock=None):
+    limits = ProspectingLimits(
+        20, 40, str(tmp_path), weekly_invite_limit=100, clock=clock
+    )
     repository = ProspectingRepository(limits.path)
     campaign = repository.create_campaign("Q4", now=NOW)
     repository.add_leads(
@@ -238,7 +240,7 @@ def _record_throttle(status: int) -> None:
 
 
 def test_weekly_limit_pauses_campaign_for_24_hours(tmp_path):
-    limits, repo, campaign = _campaign(tmp_path)
+    limits, repo, campaign = _campaign(tmp_path, clock=lambda: NOW)
     limits.limits["invite"] = 0
     _approved(repo, campaign.id)
     for _ in range(100):
@@ -359,10 +361,8 @@ def test_unknown_and_failed_outcomes_cannot_be_released(tmp_path):
     assert limits.report()["weekly_invites"]["used"] == 2
 
 
-def test_non_submission_releases_write_slot_but_keeps_profile_visit(
-    tmp_path, monkeypatch
-):
-    limits, repo, campaign = _campaign(tmp_path)
+def test_non_submission_releases_write_slot_but_keeps_profile_visit(tmp_path):
+    limits, repo, campaign = _campaign(tmp_path, clock=lambda: NOW)
     _approved(repo, campaign.id)
     runner = CampaignRunner(repo, limits, auth_root=tmp_path, clock=lambda: NOW)
     runner.tick(
@@ -373,12 +373,6 @@ def test_non_submission_releases_write_slot_but_keeps_profile_visit(
         ),
     )
 
-    class Clock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
-
-    monkeypatch.setattr("linkedin_mcp_server.prospecting_limits.datetime", Clock)
     counts = limits.report()
     assert counts["invites"]["used"] == 0
     assert counts["navigations"]["used"] == 1

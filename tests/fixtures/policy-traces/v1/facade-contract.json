@@ -102,7 +102,7 @@
       },
       "sales_nav_search_leads_by_filters": {
         "coroutine": true,
-        "signature": "(self, filters: 'SalesNavFilters', *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'"
+        "signature": "(self, filters: 'SalesNavFilters', *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None, state_db_path: 'str | None' = None) -> 'dict[str, Any]'"
       },
       "sales_nav_status": {
         "coroutine": true,
@@ -843,6 +843,30 @@
               "type": "integer"
             }
           },
+          "type": "object"
+        },
+        "output": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sales_nav_resolve_filters": {
+        "input": {
+          "additionalProperties": false,
+          "properties": {
+            "labels": {
+              "additionalProperties": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "labels"
+          ],
           "type": "object"
         },
         "output": {

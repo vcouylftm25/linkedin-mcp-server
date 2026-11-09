@@ -72,6 +72,45 @@ def register_sales_navigator_tools(
 
     @mcp.tool(
         timeout=tool_timeout,
+        title="Resolve Sales Navigator Filters",
+        annotations={"readOnlyHint": True, "openWorldHint": True},
+        tags={"prospecting", "sales_navigator", "search"},
+    )
+    @tool_errors
+    async def sales_nav_resolve_filters(
+        labels: dict[str, list[str]], ctx: Context
+    ) -> dict[str, Any]:
+        """Resolve free-text labels in Sales Navigator's visible typeaheads.
+
+        Ambiguous labels return candidates for clarification. One uncached batch
+        uses one Sales Navigator page visit.
+        """
+        allowed_types = set(FILTER_FIELDS) | set(FILTER_FIELDS.values())
+        unknown = set(labels) - allowed_types
+        if unknown:
+            raise CodedToolError(
+                f"Unknown filter fields: {', '.join(sorted(unknown))}.",
+                ErrorCode.INVALID_ARGUMENT,
+            )
+        if any(
+            not isinstance(value, list)
+            or not all(isinstance(item, str) for item in value)
+            for value in labels.values()
+        ):
+            raise CodedToolError(
+                "Each filter type must map to a list of labels.",
+                ErrorCode.INVALID_ARGUMENT,
+            )
+        extractor = await get_ready_extractor(
+            ctx, tool_name="sales_nav_resolve_filters"
+        )
+        state_db_path = limits.path if limits is not None else ProspectingLimits().path
+        return await extractor.sales_nav_resolve_filters(
+            labels, state_db_path=str(state_db_path), charge=charge
+        )
+
+    @mcp.tool(
+        timeout=tool_timeout,
         title="Search Sales Navigator Leads by Filters",
         annotations={"readOnlyHint": True, "openWorldHint": True},
         tags={"prospecting", "sales_navigator", "search"},
@@ -84,9 +123,9 @@ def register_sales_navigator_tools(
     ) -> dict[str, Any]:
         """Search for leads with structured filters instead of a pasted URL.
 
-        Filter labels must exist in the versioned catalog. Geography can also
-        use raw geography_ids while its localized resolver awaits live validation.
-        Only verified catalog values can be used; unknown values fail closed.
+        Labels resolve through Sales Navigator's visible typeaheads, using the
+        local cache first. Ambiguous labels return candidates and stop before
+        searching so the caller can ask which one the banker meant.
         """
         allowed = set(SalesNavFilters.__dataclass_fields__)
         unknown = set(filters) - allowed
@@ -97,7 +136,7 @@ def register_sales_navigator_tools(
             )
         try:
             for key in FILTER_FIELDS.keys() | {"geography_ids"}:
-                value = filters.get(key, ())
+                value = filters.get(key, [])
                 if not isinstance(value, list) or not all(
                     isinstance(item, str) for item in value
                 ):
@@ -109,13 +148,19 @@ def register_sales_navigator_tools(
                 filters["keywords"], str
             ):
                 raise ValueError("keywords must be a string or null.")
-            normalized = {
-                key: tuple(value)
-                if key in FILTER_FIELDS or key == "geography_ids"
-                else value
-                for key, value in filters.items()
-            }
-            model = SalesNavFilters(**normalized)
+            model = SalesNavFilters(
+                titles=tuple(filters.get("titles", [])),
+                keywords=filters.get("keywords"),
+                seniority=tuple(filters.get("seniority", [])),
+                function=tuple(filters.get("function", [])),
+                industries=tuple(filters.get("industries", [])),
+                geographies=tuple(filters.get("geographies", [])),
+                geography_ids=tuple(filters.get("geography_ids", [])),
+                company_headcount=tuple(filters.get("company_headcount", [])),
+                changed_jobs_90d=filters.get("changed_jobs_90d"),
+                posted_recently_30d=filters.get("posted_recently_30d"),
+                years_in_role=tuple(filters.get("years_in_role", [])),
+            )
         except (TypeError, ValueError) as exc:
             raise CodedToolError(str(exc), ErrorCode.INVALID_ARGUMENT) from exc
         pages = min(MAX_SALES_NAV_PAGES, (max_results + 14) // 15)
@@ -124,7 +169,12 @@ def register_sales_navigator_tools(
         )
         try:
             result = await extractor.sales_nav_search_leads_by_filters(
-                model, max_pages=pages, charge=charge
+                model,
+                max_pages=pages,
+                charge=charge,
+                state_db_path=str(
+                    limits.path if limits is not None else ProspectingLimits().path
+                ),
             )
         except SalesNavFilterError as exc:
             raise CodedToolError(str(exc), ErrorCode.INVALID_ARGUMENT) from exc
