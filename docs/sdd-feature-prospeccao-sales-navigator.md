@@ -22,7 +22,7 @@ sow: "—"
 
 O consumidor é o **Claude do banker** (via MCP/CLI); a estratégia (quem abordar, texto) fica nele. As ferramentas atuais leem o Sales Navigator e editam o estado local da campanha; o envio automatizado é roadmap.
 
-1. **Busca por filtros** → o Claude passa rótulos estruturados (cargo, senioridade, função, setor, região, porte e anos no cargo); o servidor resolve os rótulos suportados, monta a busca e devolve leads estruturados. Os sinais `changed_jobs_90d` e `posted_recently_30d` ainda não têm IDs verificados e são recusados antes de navegar.
+1. **Busca por filtros** → o Claude passa rótulos estruturados (cargo, senioridade, função, setor, região, porte e anos no cargo); o servidor resolve os rótulos suportados, monta a busca e devolve leads estruturados. Os sinais `changed_jobs_90d` e `posted_recently_30d` ainda não têm IDs verificados e são recusados antes de navegar. A lista de leads só aceita `/sales/lists/people` e `/sales/lists/people/<id numérico>`.
 2. **Triagem/dedup** → o servidor retorna os dados estruturais visíveis do card e links de referência. Estado de conexão e deduplicação não fazem parte da saída da busca.
 3. **Campanha** → o banker cria uma campanha local e importa leads usando `lead_vanity`, `profile_url`, `name` e, opcionalmente, `kind`, `lead_urn`, `title` e `company`.
 4. **Aprovação** → `preview_batch(campaign_id, action)` mostra os itens e hashes; `approve_batch` recebe `action` e itens identificados por `lead_vanity` (mais `note` para convite ou `text` para mensagem). O servidor calcula os hashes e emite `approval_token`; o cliente não envia tokens.
@@ -32,7 +32,8 @@ O consumidor é o **Claude do banker** (via MCP/CLI); a estratégia (quem aborda
 ## 3. Restrições & Premissas
 
 - **Restrição:** nenhum envio (convite/mensagem) sem aprovação explícita do banker; aprovação é **em lote**, com cada item visível.
-- **Restrição:** tetos conservadores ligados por padrão (convites ~20/dia e ≤100/semana; mensagens 40/dia), intervalo entre ações, só horário comercial. Banker será avisado dos limites.
+- **Restrição:** tetos conservadores ligados por padrão (convites ~20/dia e ≤100/semana; mensagens 40/dia), intervalo entre ações, só horário comercial. Banker será avisado dos limites. Aceitar um convite recebido consome uma reserva do teto diário de convites.
+- Aceitar um convite recebido consome uma reserva do teto diário de convites; a reserva não é liberada depois do aceite.
 - **Restrição:** roda local na máquina do banker com a sessão dele (`~/.linkedin-mcp`); nenhum dado de lead sai para serviço externo não homologado; nada de token/cookie/.env no repo; secret scan antes de push.
 - **Restrição:** só UI/DOM e dados que a própria página já buscou; sem chamar APIs privadas (Voyager/Sales API) diretamente, sem interceptar requests de escrita (decisão do repo de 2026-09-16).
 - **Restrição:** testes de envio só em dry-run; e2e com envio real somente com ok do Victor item a item.

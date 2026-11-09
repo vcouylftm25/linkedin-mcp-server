@@ -22,7 +22,6 @@ from linkedin_mcp_server.profile_lease import (
     get_profile_lease,
 )
 from linkedin_mcp_server.error_handler import CodedToolError
-from linkedin_mcp_server.error_handler import ErrorCode
 from linkedin_mcp_server.prospecting.domain import (
     IllegalTransition,
     InvalidLead,
@@ -98,7 +97,7 @@ def test_domain_refuses_noncanonical_or_secret_bearing_profile_url():
 
 
 @pytest.mark.parametrize("kind", [None, 3, "invitee", True])
-def test_add_leads_validates_all_kinds_before_writing_any_row(tmp_path, kind):
+def test_add_leads_rejects_bad_kind_row_and_keeps_valid_rows(tmp_path, kind):
     _limits, repo, _campaign_record = _campaign(tmp_path)
     second = repo.create_campaign("Batch validation", now=NOW)
     rows = [
@@ -115,11 +114,13 @@ def test_add_leads_validates_all_kinds_before_writing_any_row(tmp_path, kind):
         },
     ]
 
-    with pytest.raises(CodedToolError) as raised:
-        repo.add_leads(second.id, rows, now=NOW)
+    result = repo.add_leads(second.id, rows, now=NOW)
 
-    assert raised.value.code == ErrorCode.INVALID_ARGUMENT
-    assert repo.list_leads(second.id) == []
+    assert result["added"] == ["bob-jones"]
+    assert result["rejected"] == [
+        {"lead_vanity": "carol-jones", "error": "kind must be invite or message."}
+    ]
+    assert [lead.lead_vanity for lead in repo.list_leads(second.id)] == ["bob-jones"]
 
 
 def test_incoming_request_is_terminal_and_never_approved(tmp_path):

@@ -283,7 +283,7 @@
   {
     "name": "create_post",
     "title": "Create Post",
-    "description": "Publish a feed post, or preview and discard it with dry_run=True.\n\nThe text must have 1 to 3000 characters. An optional local PNG, JPEG,\nGIF or WebP image can be attached. Visibility defaults to current,\nLinkedIn's existing composer audience; requested anyone or connections\nis refused because the audience cannot be verified without reading a\nlocale-dependent label. A published result carries published=True,\npost_url (the /feed/update/<urn>/ permalink) and urn. A result with\nretry_safe=False means the Post click may have happened: inspect\nprofile activity before attempting another publication.",
+    "description": "Publish a feed post, or preview and discard it with dry_run=True.\n\nThe text must have 1 to 3000 characters. An optional local PNG, JPEG,\nGIF or WebP image can be attached. Visibility defaults to current,\nLinkedIn's existing composer audience; requested anyone or connections\nis refused because the audience cannot be verified without reading a\nlocale-dependent label. A published result carries published=True,\npost_url (the /feed/update/<urn>/ permalink) and urn. If the composer\ncloses but a fresh activity item with matching text and a post ID\ncannot be verified, the result is ``published: false`` and\n``status: \"unverified\"``; this does not prove the post was not\npublished. A result with\nretry_safe=False means the Post click may have happened: inspect\nprofile activity before attempting another publication.",
     "inputSchema": {
       "properties": {
         "text": {
@@ -1198,7 +1198,7 @@
   {
     "name": "sales_nav_search_leads",
     "title": "Search Sales Navigator Leads",
-    "description": "Read lead results from a Sales Navigator search.\n\nPass the URL copied from your Sales Navigator lead search after applying\nfilters. ``max_pages`` is capped. Each page is one navigation and counts\ntoward the daily Sales Navigator navigation cap. A page that does not\nadvance, or a final URL that dropped a requested filter, is not returned\nas a successful filtered page. Leads are structural: name, title,\ncompany, location, the ``/sales/lead/`` URL, and the public ``/in/``\nvanity when the card has one. It does not save or contact leads.",
+    "description": "Read lead results from a Sales Navigator search.\n\nPass the URL copied from your Sales Navigator lead search after applying\nfilters. ``max_pages`` is capped. Each page is one navigation and counts\ntoward the daily Sales Navigator navigation cap. A page that does not\nadvance, or a final URL that dropped a requested filter, is not returned\nas a successful filtered page. Leads are structural: name, title,\ncompany (which may be null when the card does not identify one),\nlocation, the ``/sales/lead/`` URL, and the public ``/in/``\nvanity when the card has one. It does not save or contact leads.",
     "inputSchema": {
       "properties": {
         "search_url": {
@@ -1238,7 +1238,7 @@
   {
     "name": "sales_nav_search_leads_by_filters",
     "title": "Search Sales Navigator Leads by Filters",
-    "description": "Search for leads with structured filters instead of a pasted URL.\n\nFilter labels, including geography, resolve through Sales Navigator's\nvisible typeaheads, using the locale-aware 30-day cache first. Uncached\nlabels resolve through live typeaheads. Ambiguous labels return candidates and stop before\nsearching so the caller can ask which one the banker meant. Up to\n``max_results`` are returned, across at most three result pages.",
+    "description": "Search for leads with structured filters instead of a pasted URL.\n\nFilter labels, including geography, resolve through Sales Navigator's\nvisible typeaheads, using the locale-aware 30-day cache first. Uncached\nlabels resolve through live typeaheads. Ambiguous labels return candidates and stop before\nsearching so the caller can ask which one the banker meant. Up to\n``max_results`` are returned, across at most three result pages. A lead\nincludes name, title, company (which may be null), location, the\nSales Navigator lead URL, and a public profile vanity when present.",
     "inputSchema": {
       "properties": {
         "filters": {

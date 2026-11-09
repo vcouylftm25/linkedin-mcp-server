@@ -147,6 +147,31 @@ def test_structural_lead_parser_returns_public_vanity_or_null_without_labels():
     ]
 
 
+def test_structural_lead_parser_uses_only_unambiguous_company_association():
+    base = {
+        "lead_href": "https://www.linkedin.com/sales/lead/ACwAAA,NAME_SEARCH,x",
+        "lead_text": "Ana Silva",
+        "company_hrefs": [
+            "https://www.linkedin.com/sales/company/42",
+            "https://www.linkedin.com/sales/company/43",
+        ],
+        "company_texts": ["Banco Exemplo", "Mutual Connection Employer"],
+        "company_title_adjacent": [True, False],
+        "person_hrefs": [
+            "https://www.linkedin.com/in/ana-silva/",
+            "https://www.linkedin.com/in/mutual-connection/",
+        ],
+        "text_blocks": ["Diretora Financeira", "São Paulo"],
+    }
+    lead = parse_sales_leads([base])[0]
+
+    assert lead["company"] == "Banco Exemplo"
+    assert lead["vanity"] is None
+    base["company_title_adjacent"] = [False, False]
+    lead = parse_sales_leads([base])[0]
+    assert lead["company"] is None
+
+
 def test_parser_keeps_cards_with_extra_text_and_without_company_link():
     fixture = Path(__file__).parent / "fixtures" / "sales_nav" / "lead_cards.json"
     cards = json.loads(fixture.read_text(encoding="utf-8"))

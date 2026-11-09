@@ -427,7 +427,7 @@ class PostPublisher:
                 "unverified",
                 "The composer closed after Post was clicked, but no matching "
                 "DOM permalink identified the post. Publication is unverified.",
-                published=True,
+                published=False,
                 retry_safe=False,
                 post_url=None,
                 **details,
@@ -467,7 +467,7 @@ class PostPublisher:
             f"https://www.linkedin.com/in/{match.group(1)}/recent-activity/all/"
         )
         lo = click_ms - _CLOCK_SKEW_MS
-        first_line = _lines(wanted)[0].strip() if _lines(wanted) else wanted
+        normalized_wanted = _normalize_post_text(wanted)
         deadline = self._session.monotonic() + _ACTIVITY_WAIT_SECONDS
         while True:
             state = await self._session.run_on_linkedin(_ACTIVITY_ITEMS_JS)
@@ -475,11 +475,15 @@ class PostPublisher:
             for item in items:
                 text = item.get("text") or ""
                 urns = fresh_post_urns(" ".join(item.get("ids") or []), lo, None)
-                if urns and first_line in text:
+                if urns and normalized_wanted in _normalize_post_text(text):
                     return urns[0]
             if self._session.monotonic() >= deadline:
                 return None
             await self._session.delay(_POLL_SECONDS)
+
+
+def _normalize_post_text(value: str) -> str:
+    return " ".join(value.split()).casefold()
 
 
 _ACTIVITY_WAIT_SECONDS = 10.0

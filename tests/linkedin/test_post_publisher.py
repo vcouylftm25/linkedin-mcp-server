@@ -237,7 +237,7 @@ async def test_a_post_url_without_matching_activity_is_unverified():
     result = await publisher.create_post("Hello", dry_run=False)
 
     assert result["status"] == "unverified"
-    assert result["published"] is True
+    assert result["published"] is False
     assert result["post_url"] is None
     assert result["retry_safe"] is False
     assert composer.posted is True
@@ -251,7 +251,7 @@ async def test_closed_composer_without_dom_permalink_is_explicitly_unverified():
     result = await publisher.create_post("Hello")
 
     assert result["status"] == "unverified"
-    assert result["published"] is True
+    assert result["published"] is False
     assert result["post_url"] is None
     assert result["retry_safe"] is False
     assert composer.posted is True
@@ -451,7 +451,7 @@ async def test_toast_link_without_matching_activity_is_unverified(frozen_click):
     result = await publisher.create_post("Hello")
 
     assert result["status"] == "unverified"
-    assert result["published"] is True
+    assert result["published"] is False
     assert result["post_url"] is None
     assert result["retry_safe"] is False
     assert composer.listeners == []
@@ -466,7 +466,8 @@ async def test_a_link_to_an_older_post_is_never_taken_for_the_new_one(frozen_cli
     result = await publisher.create_post("Hello")
 
     assert result["status"] == "unverified"
-    assert result["published"] is True
+    assert result["published"] is False
+    assert result["status"] == "unverified"
     assert result["post_url"] is None
     assert result["retry_safe"] is False
 
@@ -483,7 +484,8 @@ async def test_response_payload_does_not_supply_a_post_permalink(frozen_click):
     result = await publisher.create_post("Hello")
 
     assert result["status"] == "unverified"
-    assert result["published"] is True
+    assert result["published"] is False
+    assert result["status"] == "unverified"
     assert result["post_url"] is None
     assert composer.listeners == []
 
@@ -497,7 +499,8 @@ async def test_a_fresh_id_in_a_page_read_alone_is_not_evidence(frozen_click):
     result = await publisher.create_post("Hello")
 
     assert result["status"] == "unverified"
-    assert result["published"] is True
+    assert result["published"] is False
+    assert result["status"] == "unverified"
     assert result["post_url"] is None
 
 
@@ -518,6 +521,7 @@ async def test_recent_activity_matching_the_text_names_the_post(frozen_click):
         navigator.urls[-1] == "https://www.linkedin.com/in/victor/recent-activity/all/"
     )
     assert result["published"] is True
+    assert result["status"] == "published"
     assert result["urn"] == f"urn:li:activity:{new}"
 
 
@@ -531,7 +535,8 @@ async def test_matching_activity_without_a_fresh_dom_id_stays_unverified(frozen_
     result = await publisher.create_post("Hello")
 
     assert result["status"] == "unverified"
-    assert result["published"] is True
+    assert result["published"] is False
+    assert result["status"] == "unverified"
     assert result["post_url"] is None
 
 
@@ -550,8 +555,28 @@ async def test_recent_activity_whose_text_differs_is_not_taken(frozen_click):
     result = await publisher.create_post("Hello")
 
     assert result["status"] == "unverified"
-    assert result["published"] is True
+    assert result["published"] is False
+    assert result["retry_safe"] is False
     assert result["post_url"] is None
+
+
+async def test_matching_only_the_first_line_is_not_enough(frozen_click):
+    publisher, composer, _ = make()
+    composer.redirects = {
+        "https://www.linkedin.com/in/me/": "https://www.linkedin.com/in/victor/"
+    }
+    composer.activity_items = [
+        {
+            "text": "Victor\nagora\nHello\nDifferent continuation",
+            "ids": [f"urn:li:activity:{post_id(CLICK_MS + 2000)}"],
+        }
+    ]
+
+    result = await publisher.create_post("Hello\nExpected continuation")
+
+    assert result["status"] == "unverified"
+    assert result["published"] is False
+    assert result["retry_safe"] is False
 
 
 async def test_a_dry_run_never_looks_for_a_published_post(frozen_click):

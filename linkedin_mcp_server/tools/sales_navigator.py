@@ -63,7 +63,8 @@ def register_sales_navigator_tools(
         toward the daily Sales Navigator navigation cap. A page that does not
         advance, or a final URL that dropped a requested filter, is not returned
         as a successful filtered page. Leads are structural: name, title,
-        company, location, the ``/sales/lead/`` URL, and the public ``/in/``
+        company (which may be null when the card does not identify one),
+        location, the ``/sales/lead/`` URL, and the public ``/in/``
         vanity when the card has one. It does not save or contact leads.
         """
         extractor = await get_ready_extractor(ctx, tool_name="sales_nav_search_leads")
@@ -128,7 +129,9 @@ def register_sales_navigator_tools(
         visible typeaheads, using the locale-aware 30-day cache first. Uncached
         labels resolve through live typeaheads. Ambiguous labels return candidates and stop before
         searching so the caller can ask which one the banker meant. Up to
-        ``max_results`` are returned, across at most three result pages.
+        ``max_results`` are returned, across at most three result pages. A lead
+        includes name, title, company (which may be null), location, the
+        Sales Navigator lead URL, and a public profile vanity when present.
         """
         allowed = set(SalesNavFilters.__dataclass_fields__)
         unknown = set(filters) - allowed

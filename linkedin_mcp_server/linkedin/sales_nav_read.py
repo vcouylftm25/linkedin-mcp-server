@@ -442,6 +442,9 @@ def _one_lead(card: object) -> dict[str, str | None] | None:
         return None
     company_hrefs = _strings(card.get("company_hrefs", []))
     company_texts = _strings(card.get("company_texts", []))
+    company_title_adjacent = card.get("company_title_adjacent")
+    if company_title_adjacent is None and company_hrefs is not None:
+        company_title_adjacent = [False] * len(company_hrefs)
     person_hrefs = _strings(card.get("person_hrefs", []))
     blocks = _strings(card.get("text_blocks"))
     if (
@@ -450,6 +453,9 @@ def _one_lead(card: object) -> dict[str, str | None] | None:
         or person_hrefs is None
         or blocks is None
         or len(company_hrefs) != len(company_texts)
+        or not isinstance(company_title_adjacent, list)
+        or len(company_title_adjacent) != len(company_hrefs)
+        or not all(type(value) is bool for value in company_title_adjacent)
     ):
         return None
 
@@ -461,7 +467,20 @@ def _one_lead(card: object) -> dict[str, str | None] | None:
     vanities = [slug for link in person_hrefs if (slug := _vanity(link))]
     texts = [text for block in blocks if (text := _clean(block))]
     name = _clean(card.get("lead_text"))
-    company = companies[0] if companies else None
+    adjacent = [
+        _clean(text)
+        for link, text, is_adjacent in zip(
+            company_hrefs, company_texts, company_title_adjacent, strict=True
+        )
+        if is_adjacent
+        and (kind := classify_link(link)) is not None
+        and kind[0] == "sales_company"
+    ]
+    company = (
+        adjacent[0]
+        if len(adjacent) == 1
+        else (companies[0] if len(companies) == 1 else None)
+    )
     if name is None or len(texts) < 2:
         return None
     title, location = texts[:2]

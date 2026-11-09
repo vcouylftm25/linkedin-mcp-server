@@ -98,7 +98,7 @@
       "call": "sales_nav_list_leads",
       "kind": "evaluate",
       "operation": "sales_nav_result_cards",
-      "program_digest": "dced162914a7"
+      "program_digest": "477197017d16"
     }
   ],
   "result": {

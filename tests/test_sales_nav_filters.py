@@ -398,5 +398,84 @@ async def test_resolver_uses_selected_suggestion_url_when_dom_has_no_id(tmp_path
     }
 
 
+async def test_resolver_does_not_cache_a_candidate_returned_for_another_filter_type(
+    tmp_path,
+):
+    class FakePage:
+        url = "https://www.linkedin.com/sales/home"
+
+    class FakeSession:
+        page = FakePage()
+
+        async def run_on_linkedin(self, _script, arg=None):
+            if arg is None:
+                return "en-US"
+            return {
+                "locale": "en-US",
+                "options": [
+                    {
+                        "filter_type": "INDUSTRY",
+                        "query": "Executive",
+                        "candidates": [{"id": "wrong-type", "label": "Executive"}],
+                    }
+                ],
+            }
+
+    cache = SalesNavFilterCache(str(tmp_path / "state.sqlite3"))
+    resolver = SalesNavFilterResolver(
+        cast(PageSession, FakeSession()), cache, navigate=lambda _charge: _noop()
+    )
+
+    result = await resolver.resolve({"CURRENT_TITLE": ["Executive"]})
+
+    assert result["results"][0]["status"] == "not_found"
+    assert cache.get("CURRENT_TITLE", "Executive", "en-us") is None
+
+
+async def test_missing_filter_panel_is_explicit_and_releases_navigation_budget(
+    tmp_path,
+):
+    class FakePage:
+        url = "https://www.linkedin.com/sales/home"
+
+    class FakeSession:
+        page = FakePage()
+
+        async def run_on_linkedin(self, _script, arg=None):
+            return (
+                "en-US"
+                if arg is None
+                else {"locale": "en-US", "panel_found": False, "options": []}
+            )
+
+    class Charge:
+        def __init__(self):
+            self.released = []
+
+        def reserve(self, _kind):
+            return "reservation-token"
+
+        def release(self, token):
+            self.released.append(token)
+
+    charge = Charge()
+
+    async def navigate(reserve):
+        return reserve("sales_nav")
+
+    resolver = SalesNavFilterResolver(
+        cast(PageSession, FakeSession()),
+        SalesNavFilterCache(str(tmp_path / "state.sqlite3")),
+        navigate=navigate,
+    )
+
+    result = await resolver.resolve(
+        {"CURRENT_TITLE": ["Chief Executive Officer"]}, charge=charge.reserve
+    )
+
+    assert result["results"][0]["status"] == "filter_panel_unavailable"
+    assert charge.released == ["reservation-token"]
+
+
 async def _noop():
     return None

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -60,26 +61,34 @@ _SALES_NAV_CARDS_JS = r"""() => {
     return blocks;
   };
   for (const anchor of document.querySelectorAll(leadSelector)) {
-    let card = anchor.closest('li,article,[role="listitem"]');
-    if (!card || card.querySelectorAll(leadSelector).length !== 1) {
-      card = anchor.parentElement;
-      while (card && card !== document.body &&
-        (card.querySelectorAll(leadSelector).length !== 1 ||
-         (!card.querySelectorAll('a[href*="/in/"]').length && textBlocks(card).length < 2))) {
-        card = card.parentElement;
-      }
+    let card = anchor.parentElement;
+    while (card && card !== document.body && card !== document.documentElement) {
+      const parent = card.parentElement;
+      if (card.querySelectorAll(leadSelector).length === 1 && parent &&
+          parent.querySelectorAll(leadSelector).length > 1) break;
+      card = parent;
     }
-    if (!card) continue;
+    if (!card || card === document.body || card === document.documentElement ||
+        !card.parentElement || card.parentElement.querySelectorAll(leadSelector).length <= 1) continue;
     if (seen.has(card)) continue;
     seen.add(card);
     const companies = [...card.querySelectorAll('a[href*="/sales/company/"]')];
-    const people = [...card.querySelectorAll('a[href*="/in/"]')];
+    const people = [...card.querySelectorAll('a[href*="/in/"]')].filter((item) => {
+      const group = item.closest('aside,section,ul,ol,[role="region"],[role="list"]');
+      return !group || group.contains(anchor);
+    });
     const blocks = textBlocks(card);
+    const titleNode = [...card.querySelectorAll('*')].find((node) =>
+      !node.closest('a') && !node.children.length && clean(node.textContent) === blocks[0]);
+    const adjacentCompany = (item) => !!titleNode &&
+      (item.parentElement === titleNode.parentElement ||
+       item.parentElement?.parentElement === titleNode.parentElement);
     cards.push({
       lead_href: anchor.href,
       lead_text: clean(anchor.textContent),
       company_hrefs: companies.map((item) => item.href),
       company_texts: companies.map((item) => clean(item.textContent)),
+      company_title_adjacent: companies.map(adjacentCompany),
       person_hrefs: people.map((item) => item.href),
       text_blocks: blocks,
     });
@@ -117,9 +126,9 @@ def _on_sales_nav_route(url: str, path: str | None = None) -> bool:
     if path is None:
         return True
     landed_path = parsed.path.rstrip("/")
-    return landed_path == path or (
-        path == "/sales/lists/people" and landed_path.startswith(path + "/")
-    )
+    if path == "/sales/lists/people":
+        return bool(re.fullmatch(r"/sales/lists/people(?:/\d+)?", landed_path))
+    return landed_path == path
 
 
 def _checked_max_pages(max_pages: object) -> int:
@@ -234,6 +243,12 @@ class SalesNavigatorReader:
                     "sections": {},
                     "status": status,
                     "filter_resolutions": resolved,
+                    "pagination": {
+                        "pages_fetched": 0,
+                        "next_offset": None,
+                        "reason": status,
+                        "result_kind": "leads",
+                    },
                 }
             entries = tuple(
                 {
@@ -276,18 +291,31 @@ class SalesNavigatorReader:
             navigate=self._navigate_filter_page,
         ).resolve(mapped, charge=charge)
 
-    async def _navigate_filter_page(self, charge) -> None:
-        await self._capture_page(
-            "https://www.linkedin.com/sales/search/people",
-            "sales_nav_filter_resolution",
-            CapturePlan(max_scrolls=0),
-            charge,
-        )
+    async def _navigate_filter_page(self, charge) -> object | None:
+        reservation = charge(SALES_NAV_NAVIGATION_KIND) if charge is not None else None
+        try:
+            await self._capture_page(
+                "https://www.linkedin.com/sales/search/people",
+                "sales_nav_filter_resolution",
+                CapturePlan(max_scrolls=0),
+                None,
+            )
+        except BaseException:
+            owner = getattr(charge, "__self__", None)
+            release = getattr(owner, "release", None)
+            if reservation is not None and release is not None:
+                release(reservation)
+            raise
         if not _on_sales_nav_route(self._session.page.url, SALES_NAV_LEAD_SEARCH_PATH):
+            owner = getattr(charge, "__self__", None)
+            release = getattr(owner, "release", None)
+            if reservation is not None and release is not None:
+                release(reservation)
             raise CodedToolError(
                 "Sales Navigator access was not confirmed for filter resolution.",
                 ErrorCode.NOT_FOUND,
             )
+        return reservation
 
     async def search_accounts(
         self,
@@ -430,7 +458,15 @@ class SalesNavigatorReader:
             if kind == "leads" and cards_found and not page_leads:
                 unparsed_cards = True
                 reason = "unparsed_cards"
-                next_offset = page_number + 1
+                next_offset = page_number
+                section_error = {
+                    "code": "unparsed_cards",
+                    "error_type": "unparsed_cards",
+                    "error_message": (
+                        "Sales Navigator result cards were present, but none could "
+                        "be parsed. Retry this same page after checking the layout."
+                    ),
+                }
                 break
             if not ids or result.error:
                 # An empty page is the end of the list. An extraction error

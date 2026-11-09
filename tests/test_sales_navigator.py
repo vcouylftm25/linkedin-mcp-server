@@ -17,6 +17,7 @@ from linkedin_mcp_server.linkedin.sales_navigator import (
     SALES_NAV_SAVED_LEADS_URL,
     SALES_NAV_HOME_URL,
     SalesNavigatorReader,
+    _on_sales_nav_route,
     validate_sales_nav_url,
 )
 from linkedin_mcp_server.linkedin.sales_nav_filters import SalesNavFilters
@@ -162,6 +163,23 @@ async def test_saved_lead_list_accepts_a_people_list_identifier():
 
 
 @pytest.mark.parametrize(
+    "path,expected",
+    [
+        ("/sales/lists/people", True),
+        ("/sales/lists/people/123", True),
+        ("/sales/lists/people/123/", True),
+        ("/sales/lists/people/abc", False),
+        ("/sales/lists/people/123/members", False),
+    ],
+)
+def test_saved_list_route_accepts_only_root_or_numeric_list_id(path, expected):
+    assert (
+        _on_sales_nav_route(f"https://www.linkedin.com{path}", "/sales/lists/people")
+        is expected
+    )
+
+
+@pytest.mark.parametrize(
     ("resolution_status", "response_status"),
     [
         ("ambiguous", "needs_clarification"),
@@ -214,6 +232,12 @@ async def test_filter_resolution_keeps_read_tool_response_contract(
                 }
             ],
         },
+        "pagination": {
+            "pages_fetched": 0,
+            "next_offset": None,
+            "reason": response_status,
+            "result_kind": "leads",
+        },
     }
 
 
@@ -229,10 +253,12 @@ async def test_cards_present_but_none_parse_stop_pagination_as_unparsed():
 
     assert result["pagination"] == {
         "pages_fetched": 1,
-        "next_offset": 2,
+        "next_offset": 1,
         "reason": "unparsed_cards",
         "result_kind": "leads",
     }
+    assert result["section_errors"]["search_results"]["error_type"] == "unparsed_cards"
+    assert result["section_errors"]["search_results"]["code"] == "unparsed_cards"
 
 
 async def test_reservation_is_released_when_delay_fails_before_navigation(tmp_path):

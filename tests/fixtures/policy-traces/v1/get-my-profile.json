@@ -118,6 +118,8 @@
     }
   ],
   "result": {
+    "auth_state": "clear",
+    "landed_url": "https://www.linkedin.com/in/ada-lovelace/",
     "profile_urn": "ACoAA-self",
     "sections": {
       "main_profile": "Own profile"

@@ -114,7 +114,9 @@ async def test_saved_lead_list_returns_rendered_text_and_profile_reference(
     assert result["leads"][0]["sales_lead_url"].startswith("/sales/lead/")
 
 
-async def test_live_filter_resolver_reads_synthetic_rendered_suggestions(tmp_path):
+async def test_live_filter_resolver_ignores_stale_options_from_an_earlier_query(
+    tmp_path,
+):
     """Synthetic UI algorithm fixture; replace with anonymized capture when available."""
     async with async_playwright() as playwright:
         try:
@@ -143,8 +145,8 @@ async def test_live_filter_resolver_reads_synthetic_rendered_suggestions(tmp_pat
 
     assert charges == ["sales_nav"]
     assert result["locale"] == "pt-br"
-    assert result["results"][0]["status"] == "ambiguous"
-    assert {item["id"] for item in result["results"][0]["candidates"]} == {
-        "industry-42",
-        "industry-43",
-    }
+    assert result["results"][0]["status"] == "resolved"
+    assert result["results"][0]["resolved"]["id"] == "fresh-Indústria de"
+    assert all(
+        item["id"] != "stale-industry" for item in result["results"][0]["candidates"]
+    )

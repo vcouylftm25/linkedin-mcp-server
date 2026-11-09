@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -203,6 +204,7 @@ class PersonReader:
         *,
         main_profile_already_loaded: bool = False,
         allow_self_alias: bool = False,
+        navigation_charge: Callable[[], object] | None = None,
     ) -> dict[str, Any]:
         """Read a person profile with configurable sections.
 
@@ -251,6 +253,8 @@ class PersonReader:
                         and urlparse(self._session.page.url).path.rstrip("/")
                         == urlparse(base_url).path.rstrip("/")
                     )
+                    if not can_reuse_main and navigation_charge is not None:
+                        navigation_charge()
                     if can_reuse_main:
                         extracted = await self._capture._extract_loaded_section(
                             url,
@@ -331,8 +335,26 @@ class PersonReader:
                 await callbacks.on_error(e)
             raise
 
+        landed_url = str(getattr(self._session.page, "url", "") or f"{base_url}/")
+        parsed_landed = urlparse(landed_url)
+        auth_state = (
+            "auth_required"
+            if parsed_landed.path.startswith(
+                (
+                    "/login",
+                    "/authwall",
+                    "/checkpoint",
+                    "/challenge",
+                    "/uas/login",
+                    "/uas/consumer-email-challenge",
+                )
+            )
+            else "clear"
+        )
         result: dict[str, Any] = {
             "url": f"{base_url}/",
+            "landed_url": landed_url,
+            "auth_state": auth_state,
             "sections": sections,
         }
         if profile_urn:

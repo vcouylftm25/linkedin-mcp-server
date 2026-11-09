@@ -102,7 +102,7 @@
       "call": "sales_nav_search_leads_by_filters",
       "kind": "evaluate",
       "operation": "sales_nav_result_cards",
-      "program_digest": "dced162914a7"
+      "program_digest": "477197017d16"
     }
   ],
   "result": {

@@ -85,7 +85,7 @@ Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https
 |------|-------------|
 | `get_person_profile` | Read selected sections of a LinkedIn profile. |
 | `get_my_profile` | Read the signed-in user's profile. |
-| `connect_with_person` | Preview or send a connection request; accept incoming requests. |
+| `connect_with_person` | Preview or send a connection request; accept incoming requests (each acceptance consumes an invite reservation). |
 | `get_sidebar_profiles` | Find recommended profile links. |
 | `get_inbox` | List conversation previews without opening threads. |
 | `get_conversation` | Read a conversation by username or thread ID. |
@@ -102,17 +102,17 @@ Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https
 | `dismiss_job` | Dismiss a job from search results. |
 | `search_people` | Find people by keyword and profile filters. |
 | `sales_nav_status` | Check access to Sales Navigator. |
-| `sales_nav_search_leads` | Read lead results from a Sales Navigator URL. |
+| `sales_nav_search_leads` | Read lead results from a Sales Navigator URL; a lead's company may be null when the card does not identify one. |
 | `sales_nav_resolve_filters` | Resolve free-text filter labels via Sales Navigator typeahead; ambiguous labels return candidates. |
-| `sales_nav_search_leads_by_filters` | Resolve supported labels through visible Sales Navigator typeaheads and a locale-aware 30-day cache; return up to 45 leads across at most three pages. Ambiguous labels stop before search. |
+| `sales_nav_search_leads_by_filters` | Resolve supported labels through visible Sales Navigator typeaheads and a locale-aware 30-day cache; return up to 45 leads across at most three pages. Company may be null when a card does not identify it; ambiguous labels stop before search. |
 | `sales_nav_search_accounts` | Read account results from a Sales Navigator URL. |
-| `sales_nav_list_leads` | Read saved Sales Navigator leads. |
+| `sales_nav_list_leads` | Read saved Sales Navigator leads from `/sales/lists/people` or a numeric list ID. |
 | `get_job_details` | Read details from a job posting. |
 | `get_job_apply_url` | Read a job's application type and external link. |
 | `get_easy_apply_form` | Read Easy Apply fields without submitting. |
 | `get_feed` | Read recent posts from your home feed. |
 | `search_posts` | Search posts by keyword and filters. |
-| `create_post` | Preview or publish a feed post. |
+| `create_post` | Preview or publish a feed post. Publication requires a fresh activity item with matching text and a post ID; otherwise `status` is `unverified`, `published` is false, and retrying is unsafe. |
 | `get_prospecting_limits` | Read local daily and weekly prospecting limits. |
 | `create_campaign` | Create a local prospecting campaign. |
 | `add_leads` | Add profile leads to a campaign. |
@@ -134,6 +134,8 @@ invitation and message execution is not wired in this phase. There is no
 available yet; both remain roadmap work. Daily invite, message, and
 profile-navigation caps are enforced with a weekly invite cap. Sales Navigator
 page loads have a separate limit of 40 per local day.
+An incoming invitation accepted by `connect_with_person` consumes one invite
+reservation, just like an outgoing invitation attempt.
 
 <br/>
 <br/>

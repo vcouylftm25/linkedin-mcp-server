@@ -3,13 +3,39 @@
 <html lang="pt-BR">
 <head><meta charset="utf-8"><title>synthetic typeahead</title></head>
 <body>
-  <button type="button" aria-expanded="false">Setor</button>
-  <div>
-    <input role="combobox" aria-autocomplete="list" style="display:block">
-    <div role="listbox">
-      <div role="option" data-id="industry-42">Indústria de transformação</div>
-      <div role="option" data-id="industry-43">Indústria</div>
+  <main>
+    <div role="region" id="filters-region">
+      <button type="button" aria-controls="filters-panel" aria-expanded="false">Open filters</button>
+      <section role="region" id="filters-panel" hidden>
+        <button type="button" id="industry-trigger">Setor</button>
+        <input role="combobox" aria-autocomplete="list" aria-controls="industry-options" style="display:none">
+        <div role="listbox" id="industry-options">
+          <div role="option" data-id="stale-industry">Industry</div>
+        </div>
+      </section>
     </div>
-  </div>
+  </main>
+  <script>
+    const panel = document.querySelector('#filters-panel');
+    document.querySelector('[aria-controls="filters-panel"]').addEventListener('click', event => {
+      panel.hidden = false;
+      event.currentTarget.setAttribute('aria-expanded', 'true');
+    });
+    document.querySelector('#industry-trigger').addEventListener('click', () => {
+      document.querySelector('input[role="combobox"]').style.display = 'block';
+    });
+    document.querySelector('input[role="combobox"]').addEventListener('input', event => {
+      const list = document.querySelector('#industry-options');
+      const query = event.currentTarget.value;
+      list.replaceChildren();
+      if (query) {
+        const option = document.createElement('div');
+        option.setAttribute('role', 'option');
+        option.setAttribute('data-id', 'fresh-' + query);
+        option.textContent = query;
+        list.append(option);
+      }
+    });
+  </script>
 </body>
 </html>

@@ -157,54 +157,63 @@ _RESOLVE_UI_JS = r"""async (requests) => {
     .find((node) => labels.includes(allText(node)));
   const hasRequestedHeading = (root) => requests.some(request =>
     findHeading(request.ui_labels, root));
-  let panel = [...document.querySelectorAll('[role=dialog],[role=region]')]
-    .find(hasRequestedHeading) || null;
-  if (!panel) {
-    const structuralToggle = [...document.querySelectorAll('button[aria-controls][aria-expanded]')]
-      .find(button => {
-        const controlled = document.getElementById(button.getAttribute('aria-controls'));
-        return controlled && (controlled.matches('[role=dialog],[role=region]') ||
-          controlled.querySelector('input[role=combobox],[role=heading]'));
-      });
-    const localizedFallback = [...document.querySelectorAll('button,[role=button]')]
-      .find(node => ['All filters', 'Todos os filtros'].includes(allText(node)));
-    const toggle = structuralToggle || localizedFallback;
-    if (toggle) {
-      toggle.click();
-      await new Promise(resolve => setTimeout(resolve, 0));
-      panel = [...document.querySelectorAll('[role=dialog],[role=region]')]
-        .find(hasRequestedHeading) || null;
+  const filtersRegion = [...document.querySelectorAll('[role=region]')]
+    .find(root => root !== document.body && root !== document.documentElement &&
+      hasRequestedHeading(root) && root.querySelector('button[aria-controls][aria-expanded]')) || null;
+  const toggles = filtersRegion ? [...filtersRegion.querySelectorAll('button[aria-controls][aria-expanded]')] : [];
+  const toggle = toggles.find(button => {
+    const controlled = document.getElementById(button.getAttribute('aria-controls'));
+    return controlled && hasRequestedHeading(controlled);
+  });
+  let panel = toggle ? document.getElementById(toggle.getAttribute('aria-controls')) : null;
+  if (toggle && toggle.getAttribute('aria-expanded') === 'false') {
+    toggle.click();
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const controlled = document.getElementById(toggle.getAttribute('aria-controls'));
+      if (toggle.getAttribute('aria-expanded') === 'true' && controlled && hasRequestedHeading(controlled)) {
+        panel = controlled;
+        break;
+      }
     }
   }
-  const waitForOptions = async () => {
-    let previous = null;
-    let stable = 0;
+  if (!panel && filtersRegion && hasRequestedHeading(filtersRegion)) panel = filtersRegion;
+  const listFor = (input) => {
+    const ids = [input.getAttribute('aria-controls'), input.getAttribute('aria-owns')]
+      .filter(Boolean).flatMap(value => value.split(/\s+/));
+    const roots = ids.map(id => document.getElementById(id)).filter(Boolean);
+    if (!roots.length) return [];
+    return roots.flatMap(root => [...root.querySelectorAll('[role=option], [role=listitem]')]);
+  };
+  const signature = (nodes) => nodes.map(node => `${node.getAttribute('id') || ''}\u0000${allText(node)}`).join('\u0001');
+  const waitForOptions = async (input, before) => {
     for (let attempt = 0; attempt < 20; attempt++) {
-      const nodes = [...document.querySelectorAll('[role=option], [role=listbox] [role=listitem]')]
-        .filter(node => allText(node));
-      const signature = nodes.map(allText).join('\u0000');
-      if (signature && signature === previous) stable++;
-      else stable = 0;
-      if (stable >= 1) return nodes;
-      previous = signature;
+      const nodes = listFor(input).filter(node => allText(node));
+      const query = clean(input.value).toLocaleLowerCase();
+      if (signature(nodes) !== before && nodes.length &&
+          nodes.every(node => allText(node).toLocaleLowerCase().includes(query))) return nodes;
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    return [...document.querySelectorAll('[role=option], [role=listbox] [role=listitem]')]
-      .filter(node => allText(node));
+    return [];
   };
   const options = [];
   for (const request of requests) {
-    const trigger = findHeading(request.ui_labels, panel || document);
+    const trigger = panel && findHeading(request.ui_labels, panel);
     if (!trigger) { options.push({filter_type: request.filter_type, query: request.query, candidates: []}); continue; }
     trigger.click();
     await new Promise(resolve => setTimeout(resolve, 0));
-    const input = [...document.querySelectorAll('input[role=combobox],input[aria-autocomplete]')]
+    const input = [...panel.querySelectorAll('input[role=combobox],input[aria-autocomplete]')]
       .find((node) => node.offsetParent !== null);
     if (!input) { options.push({filter_type: request.filter_type, query: request.query, candidates: []}); continue; }
     input.focus();
+    const before = signature(listFor(input));
+    input.value = '';
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    for (let attempt = 0; attempt < 20 && listFor(input).some(node => allText(node)); attempt++)
+      await new Promise(resolve => setTimeout(resolve, 50));
     input.value = request.query;
     input.dispatchEvent(new Event('input', {bubbles: true}));
-    const nodes = await waitForOptions();
+    const nodes = await waitForOptions(input, before);
     const candidates = nodes.map(node => ({
       id: node.getAttribute('data-id') || node.getAttribute('data-urn') || node.getAttribute('data-value') || node.getAttribute('value') || '',
       label: allText(node)
@@ -220,7 +229,7 @@ _RESOLVE_UI_JS = r"""async (requests) => {
     options.push({filter_type: request.filter_type, query: request.query, candidates, url});
     input.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
   }
-  return {locale: document.documentElement.lang || 'und', options};
+  return {locale: document.documentElement.lang || 'und', panel_found: !!panel, options};
 }"""
 
 
@@ -240,9 +249,10 @@ class SalesNavFilterResolver:
         seed = Catalog.load()
         current_url = getattr(getattr(self.session, "page", None), "url", "")
         did_navigate = False
+        navigation_token = None
         host = urlparse(str(current_url)).hostname
         if host not in {"linkedin.com", "www.linkedin.com"}:
-            await self._navigate(charge)
+            navigation_token = await self._navigate(charge)
             did_navigate = True
         locale = str(
             await self.session.run_on_linkedin(
@@ -313,10 +323,35 @@ class SalesNavFilterResolver:
         observed: dict[tuple[str, str], dict[str, Any]] = {}
         if pending:
             if not did_navigate:
-                await self._navigate(charge)
+                navigation_token = await self._navigate(charge)
             raw = await self._read_ui(pending)
             locale = str(raw.get("locale") or locale).casefold()
+            if raw.get("panel_found") is False:
+                owner = getattr(charge, "__self__", None)
+                release = getattr(owner, "release", None)
+                if navigation_token is not None and release is not None:
+                    release(navigation_token)
+                return {
+                    "locale": locale,
+                    "results": [
+                        {
+                            "filter_type": item["filter_type"],
+                            "query": item["query"],
+                            "status": "filter_panel_unavailable",
+                            "resolved": None,
+                            "candidates": [],
+                        }
+                        for item in pending
+                    ],
+                }
+            pending_keys = {
+                (item["filter_type"], item["query"]): item for item in pending
+            }
             for item in raw.get("options", []):
+                key = (item.get("filter_type"), item.get("query"))
+                expected = pending_keys.get(key)
+                if expected is None:
+                    continue
                 url_candidate = _candidate_from_url(item.get("url", ""), item)
                 if url_candidate is not None and not any(
                     candidate.get("id") for candidate in item.get("candidates", [])
@@ -326,9 +361,17 @@ class SalesNavFilterResolver:
                     item["filter_type"], item["query"], item["candidates"]
                 )
                 observed[(item["filter_type"], item["query"])] = result
-                if result["status"] == "resolved":
+                resolved = result.get("resolved")
+                if (
+                    result["status"] == "resolved"
+                    and result.get("filter_type") == expected["filter_type"]
+                    and isinstance(resolved, dict)
+                    and resolved.get("filter_type") == expected["filter_type"]
+                    and normalize_filter_label(str(resolved.get("label", "")))
+                    == normalize_filter_label(expected["query"])
+                ):
                     self.cache.put(
-                        item["filter_type"], item["query"], locale, result["resolved"]
+                        expected["filter_type"], expected["query"], locale, resolved
                     )
         results = []
         for filter_type, queries in labels.items():
@@ -361,13 +404,13 @@ class SalesNavFilterResolver:
         """Read suggestions from the rendered page and its resulting URL only."""
         return await self.session.run_on_linkedin(_RESOLVE_UI_JS, pending)
 
-    async def _navigate(self, charge) -> None:
+    async def _navigate(self, charge) -> Any:
         if self.navigate is not None:
-            await self.navigate(charge)
+            return await self.navigate(charge)
         else:
-            if charge:
-                charge(SALES_NAV_NAVIGATION_KIND)
+            token = charge(SALES_NAV_NAVIGATION_KIND) if charge else None
             await self.session.page.goto("https://www.linkedin.com/sales/search/people")
+            return token
 
 
 def _candidate_from_url(url: str, item: dict[str, Any]) -> dict[str, str] | None:

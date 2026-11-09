@@ -144,9 +144,13 @@ class PageNavigator:
             "LinkedIn requires interactive re-authentication. "
             "Run with --login and complete the account selection/sign-in flow."
         )
+        error = AuthenticationError(message)
+        error.landed_url = str(getattr(self._session.page, "url", ""))
+        error.auth_state = "auth_required"
+        error.auth_barrier = barrier
         if navigation_error is not None:
-            raise AuthenticationError(message) from navigation_error
-        raise AuthenticationError(message)
+            raise error from navigation_error
+        raise error
 
     async def _goto_with_auth_checks(
         self,

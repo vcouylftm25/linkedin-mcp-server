@@ -8,7 +8,6 @@ with configurable section selection.
 import json
 import logging
 from typing import Annotated, Any
-from urllib.parse import urlparse
 
 from fastmcp import Context, FastMCP
 from pydantic import BeforeValidator, Field
@@ -111,14 +110,16 @@ def register_person_tools(
             The LLM should parse the raw text in each section.
         """
         linkedin_username = normalize_person_identifier(linkedin_username)
-        token = limits.reserve("navigation") if limits is not None else None
         try:
             extractor = await get_ready_extractor(ctx, tool_name="get_person_profile")
         except BaseException:
-            if token is not None and limits is not None:
-                limits.release(token)
             raise
         requested, unknown = parse_person_sections(sections)
+        reservations: list[object] = []
+
+        def charge_navigation() -> None:
+            if limits is not None:
+                reservations.append(limits.reserve("navigation"))
 
         logger.info(
             "Reading profile: %s (sections=%s)",
@@ -127,22 +128,31 @@ def register_person_tools(
         )
 
         cb = MCPContextProgressCallback(ctx)
-        # Keep the reservation on errors from read_person: navigation may
-        # already have reached the target before extraction failed.
-        result = await extractor.read_person(
-            linkedin_username,
-            requested,
-            callbacks=cb,
-            max_scrolls=max_scrolls,
-        )
-
-        if token is not None and limits is not None:
-            landed = urlparse(str(result.get("url", "")))
-            host = landed.hostname or ""
-            if (host != "linkedin.com" and not host.endswith(".linkedin.com")) or not (
-                landed.path.startswith("/in/")
+        try:
+            result = await extractor.read_person(
+                linkedin_username,
+                requested,
+                callbacks=cb,
+                max_scrolls=max_scrolls,
+                navigation_charge=charge_navigation if limits is not None else None,
+            )
+        except BaseException as error:
+            if (
+                limits is not None
+                and getattr(error, "auth_state", None) == "auth_required"
+                and reservations
             ):
-                limits.release(token)
+                limits.release(reservations[-1])
+            raise
+
+        if (
+            limits is not None
+            and result.get("auth_state") == "auth_required"
+            and reservations
+        ):
+            # The reader reports the page actually reached and its auth check.
+            # Release the most recent page reservation only when no profile page loaded.
+            limits.release(reservations[-1])
 
         if unknown:
             result["unknown_sections"] = unknown
@@ -320,13 +330,6 @@ def register_person_tools(
             raise
         if token is not None and limits is not None and not write_attempt.attempted:
             limits.release(token)
-        if (
-            token is not None
-            and limits is not None
-            and result.get("status") == "accepted"
-        ):
-            limits.release(token)
-
         await ctx.report_progress(progress=100, total=100, message="Complete")
 
         return result

@@ -90,7 +90,7 @@ async def test_invite_cap_refuses_before_browser_and_preview_is_free(
     assert ready.await_count == 2
 
 
-async def test_accepting_incoming_invitation_releases_outgoing_invite_slot(
+async def test_accepting_incoming_invitation_consumes_an_invite_slot(
     tmp_path, mock_context, serve_extractor
 ):
     from linkedin_mcp_server.tools.person import register_person_tools
@@ -110,7 +110,7 @@ async def test_accepting_incoming_invitation_releases_outgoing_invite_slot(
     call = await get_tool_fn(mcp, "connect_with_person")
 
     assert await call("alice", mock_context) == {"status": "accepted"}
-    assert limits.report()["invites"]["used"] == 0
+    assert limits.report()["invites"]["used"] == 1
 
 
 async def test_get_person_profile_uses_navigation_budget(
@@ -124,6 +124,12 @@ async def test_get_person_profile_uses_navigation_budget(
     extractor = _make_mock_extractor(
         {"url": "https://www.linkedin.com/in/alice/", "sections": {}}
     )
+
+    async def read_person(*_args, **kwargs):
+        kwargs["navigation_charge"]()
+        return {"url": "https://www.linkedin.com/in/alice/", "sections": {}}
+
+    extractor.read_person.side_effect = read_person
     serve_extractor(extractor)
     call = await get_tool_fn(mcp, "get_person_profile")
 
@@ -141,8 +147,24 @@ async def test_get_person_profile_releases_budget_when_linkedin_blocks_navigatio
     mcp = FastMCP("test")
     register_person_tools(mcp, limits=limits)
     extractor = _make_mock_extractor(
-        {"url": "https://www.linkedin.com/login", "sections": {}}
+        {
+            "url": "https://www.linkedin.com/in/alice/",
+            "landed_url": "https://www.linkedin.com/login",
+            "auth_state": "auth_required",
+            "sections": {},
+        }
     )
+
+    async def blocked_read(*_args, **kwargs):
+        kwargs["navigation_charge"]()
+        return {
+            "url": "https://www.linkedin.com/in/alice/",
+            "landed_url": "https://www.linkedin.com/login",
+            "auth_state": "auth_required",
+            "sections": {},
+        }
+
+    extractor.read_person.side_effect = blocked_read
     serve_extractor(extractor)
     call = await get_tool_fn(mcp, "get_person_profile")
 

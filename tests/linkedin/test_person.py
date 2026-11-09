@@ -123,6 +123,56 @@ class TestReadPersonUrls:
         assert urls[0].endswith("/in/testuser/")
         assert set(result["sections"]) == {"main_profile"}
 
+    async def test_each_person_section_navigation_charges_the_budget(self, mock_page):
+        reader = _reader(mock_page)
+        charged = []
+        with (
+            patch.object(
+                reader._capture,
+                "capture",
+                new_callable=AsyncMock,
+                return_value=extracted("text"),
+            ),
+            patch.object(
+                reader._capture,
+                "_extract_overlay",
+                new_callable=AsyncMock,
+                return_value=extracted(""),
+            ),
+            patch(
+                "linkedin_mcp_server.linkedin.session.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+        ):
+            await reader.read_person(
+                "testuser", {"experience"}, navigation_charge=lambda: charged.append(1)
+            )
+
+        assert charged == [1, 1]
+
+    async def test_reader_exposes_the_actual_landed_auth_route(self, mock_page):
+        mock_page.url = "https://www.linkedin.com/checkpoint/challenge/"
+        reader = _reader(mock_page)
+        with (
+            patch.object(
+                reader._capture,
+                "capture",
+                new_callable=AsyncMock,
+                return_value=extracted(""),
+            ),
+            patch.object(
+                reader._capture,
+                "_extract_overlay",
+                new_callable=AsyncMock,
+                return_value=extracted(""),
+            ),
+        ):
+            result = await reader.read_person("testuser", {"main_profile"})
+
+        assert result["url"] == "https://www.linkedin.com/in/testuser/"
+        assert result["landed_url"] == mock_page.url
+        assert result["auth_state"] == "auth_required"
+
     async def test_a_pasted_profile_link_reaches_the_canonical_profile_url(
         self, mock_page
     ):

@@ -16,7 +16,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from linkedin_mcp_server.error_handler import CodedToolError, ErrorCode
 from linkedin_mcp_server.prospecting.domain import (
     Campaign,
     IllegalTransition,
@@ -146,19 +145,19 @@ class ProspectingRepository:
         now: datetime | None = None,
     ) -> dict[str, list[Any]]:
         """Commit each lead separately, so one rejected row does not drop the rest."""
-        for raw in leads:
-            kind = raw.get("kind", "invite")
-            if not isinstance(kind, str) or kind not in _LEAD_KINDS:
-                raise CodedToolError(
-                    "kind must be invite or message.", ErrorCode.INVALID_ARGUMENT
-                )
         moment = _now(now)
         added: list[str] = []
         duplicates: list[str] = []
         rejected: list[dict[str, str]] = []
         self._require_campaign(campaign_id)
         for raw in leads:
-            vanity = str(raw.get("lead_vanity", ""))
+            vanity = str(raw.get("lead_vanity", "")) if isinstance(raw, Mapping) else ""
+            kind = raw.get("kind", "invite") if isinstance(raw, Mapping) else None
+            if not isinstance(kind, str) or kind not in _LEAD_KINDS:
+                rejected.append(
+                    {"lead_vanity": vanity, "error": "kind must be invite or message."}
+                )
+                continue
             try:
                 self._add_one(campaign_id, raw, moment)
             except InvalidLead as exc:

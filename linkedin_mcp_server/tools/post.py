@@ -52,7 +52,11 @@ def register_post_tools(
         LinkedIn's existing composer audience; requested anyone or connections
         is refused because the audience cannot be verified without reading a
         locale-dependent label. A published result carries published=True,
-        post_url (the /feed/update/<urn>/ permalink) and urn. A result with
+        post_url (the /feed/update/<urn>/ permalink) and urn. If the composer
+        closes but a fresh activity item with matching text and a post ID
+        cannot be verified, the result is ``published: false`` and
+        ``status: "unverified"``; this does not prove the post was not
+        published. A result with
         retry_safe=False means the Post click may have happened: inspect
         profile activity before attempting another publication.
         """
