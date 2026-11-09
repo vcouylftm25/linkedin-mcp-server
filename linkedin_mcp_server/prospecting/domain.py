@@ -137,7 +137,11 @@ _ALLOWED: dict[LeadState, frozenset[LeadState]] = {
     LeadState.MESSAGE_APPROVED: frozenset(
         {LeadState.MESSAGE_UNCONFIRMED, LeadState.SKIPPED}
     ),
-    LeadState.MESSAGE_UNCONFIRMED: frozenset({LeadState.MESSAGED, LeadState.SKIPPED}),
+    # Reconciliation may return an absent message to the approved queue only
+    # after positive evidence that the previous submission did not land.
+    LeadState.MESSAGE_UNCONFIRMED: frozenset(
+        {LeadState.MESSAGED, LeadState.MESSAGE_APPROVED, LeadState.SKIPPED}
+    ),
     LeadState.MESSAGED: frozenset(
         {LeadState.REPLY_UNCONFIRMED, LeadState.REPLIED, LeadState.SKIPPED}
     ),

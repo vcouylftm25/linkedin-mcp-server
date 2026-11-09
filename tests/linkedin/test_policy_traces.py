@@ -159,7 +159,8 @@ async def test_tool_schema_trace_keeps_people_boundary_coercion_and_inventory():
         "tool_schemas"
     ]
 
-    assert len(schemas) == 38
+    assert len(schemas) == 39
+    assert schemas["sales_nav_resolve_filters"]["input"]["required"] == ["labels"]
     network = schemas["search_people"]["input"]["properties"]["network"]
     assert network["anyOf"] == [
         {"items": {"type": "string"}, "type": "array"},

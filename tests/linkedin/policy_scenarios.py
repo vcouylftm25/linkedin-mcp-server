@@ -937,7 +937,13 @@ async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
     # A posting is only whole with its description heading; the other
     # facades accept any text.
     text = "About the job\nResult content" if method == "read_job" else "Result content"
-    page = _page(recorder).script("evaluate:root_content", _root(text))
+    if method == "sales_nav_resolve_filters":
+        page = ScriptedPage(
+            recorder,
+            url="https://www.linkedin.com/sales/search/people?query=filters",
+        ).script("evaluate:sales_nav_filter_locale", "en-US")
+    else:
+        page = _page(recorder).script("evaluate:root_content", _root(text))
     if method in {
         "sales_nav_search_leads",
         "sales_nav_search_leads_by_filters",
@@ -981,6 +987,12 @@ async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
                 result = await extractor.sales_nav_search_leads_by_filters(
                     SalesNavFilters(**arguments["filters"])
                 )
+            elif method == "sales_nav_resolve_filters":
+                arguments = {
+                    "labels": {},
+                    "state_db_path": "/tmp/sales-nav-policy.sqlite3",
+                }
+                result = await extractor.sales_nav_resolve_filters(**arguments)
             elif method == "sales_nav_search_accounts":
                 arguments = {
                     "search_url": "https://www.linkedin.com/sales/search/company?query=accounts"
@@ -998,7 +1010,9 @@ async def _single_capture_facade_scenario(method: str) -> dict[str, Any]:
     page.assert_clean()
     return recorder.trace(
         {"method": method, "arguments": arguments},
-        _complete_mapping_result(result, section_names=list(result["sections"])),
+        result
+        if method == "sales_nav_resolve_filters"
+        else _complete_mapping_result(result, section_names=list(result["sections"])),
     )
 
 
@@ -1335,6 +1349,7 @@ TOOL_FACADE_METHODS = {
     "search_people",
     "search_posts",
     "sales_nav_status",
+    "sales_nav_resolve_filters",
     "sales_nav_search_leads",
     "sales_nav_search_leads_by_filters",
     "sales_nav_search_accounts",
@@ -1352,6 +1367,7 @@ async def build_policy_traces() -> dict[str, dict[str, Any]]:
         )
         for method in (
             "sales_nav_status",
+            "sales_nav_resolve_filters",
             "sales_nav_search_leads",
             "sales_nav_search_leads_by_filters",
             "sales_nav_search_accounts",

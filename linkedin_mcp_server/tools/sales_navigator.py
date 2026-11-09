@@ -124,8 +124,10 @@ def register_sales_navigator_tools(
         """Search for leads with structured filters instead of a pasted URL.
 
         Labels resolve through Sales Navigator's visible typeaheads, using the
-        local cache first. Ambiguous labels return candidates and stop before
-        searching so the caller can ask which one the banker meant.
+        locale-aware 30-day cache first. Uncached labels resolve through live
+        typeaheads. Ambiguous labels return candidates and stop before
+        searching so the caller can ask which one the banker meant. Up to
+        ``max_results`` are returned, across at most three result pages.
         """
         allowed = set(SalesNavFilters.__dataclass_fields__)
         unknown = set(filters) - allowed
@@ -178,7 +180,18 @@ def register_sales_navigator_tools(
             )
         except SalesNavFilterError as exc:
             raise CodedToolError(str(exc), ErrorCode.INVALID_ARGUMENT) from exc
-        result["references"] = result.get("references", [])[:max_results]
+        if "leads" in result:
+            result["leads"] = result["leads"][:max_results]
+        references = result.get("references", {})
+        if isinstance(references, dict):
+            result["references"] = {
+                **references,
+                "search_results": references.get("search_results", [])[:max_results],
+            }
+        else:
+            # Keep compatibility with an older extractor result while the
+            # public result contract uses references grouped by section.
+            result["references"] = references[:max_results]
         return result
 
     @mcp.tool(

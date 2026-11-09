@@ -674,6 +674,7 @@ def semantic_program_id(program: str) -> str:
     compact = " ".join(program.split())
     checks = (
         ("SALES_NAV_RESULT_CARDS", "sales_nav_result_cards"),
+        ("document.documentElement.lang || 'und'", "sales_nav_filter_locale"),
         ("performance.timeOrigin", "document_origin"),
         ("element.ownerDocument.location.href", "owner_document_address"),
         ("MAX_HEADING_CONTAINERS", "root_content"),

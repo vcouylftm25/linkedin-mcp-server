@@ -186,3 +186,17 @@ async def test_get_prospecting_limits_tool_reads_without_a_browser(tmp_path):
     register_prospecting_tools(unconfigured)
     tool = await unconfigured.get_tool("get_prospecting_limits")
     assert (await tool.fn())["enabled"] is False
+
+
+def test_report_upgrades_database_created_by_filter_cache(tmp_path):
+    from linkedin_mcp_server.linkedin.sales_nav_resolver import SalesNavFilterCache
+
+    limits = ProspectingLimits(5, 7, str(tmp_path))
+    SalesNavFilterCache(str(limits.path)).put(
+        "industries", "Manufacturing", "en-US", {"id": "123", "label": "Manufacturing"}
+    )
+
+    report = limits.report()
+
+    assert report["invites"] == {"used": 0, "limit": 5, "remaining": 5}
+    assert report["messages"] == {"used": 0, "limit": 7, "remaining": 7}

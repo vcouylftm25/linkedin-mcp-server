@@ -104,7 +104,7 @@ Use code <strong>FOUNDING20</strong> for 20% off your first year. <a href="https
 | `sales_nav_status` | Check access to Sales Navigator. |
 | `sales_nav_search_leads` | Read lead results from a Sales Navigator URL. |
 | `sales_nav_resolve_filters` | Resolve free-text filter labels via Sales Navigator typeahead; ambiguous labels return candidates. |
-| `sales_nav_search_leads_by_filters` | Search leads from free-text filter labels, with a local 30-day cache. |
+| `sales_nav_search_leads_by_filters` | Resolve labels through visible Sales Navigator typeaheads and a locale-aware 30-day cache; return up to 45 leads across at most three pages. Ambiguous labels stop before search. |
 | `sales_nav_search_accounts` | Read account results from a Sales Navigator URL. |
 | `sales_nav_list_leads` | Read saved Sales Navigator leads. |
 | `get_job_details` | Read details from a job posting. |

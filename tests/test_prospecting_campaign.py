@@ -36,6 +36,7 @@ from linkedin_mcp_server.prospecting.repository import (
 )
 from linkedin_mcp_server.prospecting.invite import perform_campaign_connect
 from linkedin_mcp_server.prospecting.reconcile import (
+    RepositoryStore,
     reconcile_unconfirmed,
     reconciled_state,
 )
@@ -465,6 +466,20 @@ def test_reconciliation_uses_only_positive_connection_evidence(reading, expected
     assert reconciled_state(LeadState.INVITE_UNCONFIRMED, reading) is expected
 
 
+@pytest.mark.parametrize(
+    ("reading", "expected"),
+    [
+        ("message_sent", LeadState.MESSAGED),
+        ("message_absent", LeadState.MESSAGE_APPROVED),
+        ("pending", LeadState.MESSAGE_UNCONFIRMED),
+        ("unavailable", LeadState.MESSAGE_UNCONFIRMED),
+        (None, LeadState.MESSAGE_UNCONFIRMED),
+    ],
+)
+def test_message_reconciliation_requires_message_evidence(reading, expected):
+    assert reconciled_state(LeadState.MESSAGE_UNCONFIRMED, reading) is expected
+
+
 def test_reconcile_unconfirmed_reads_each_lead_through_injected_reader():
     lead = Lead(
         lead_vanity="alice-smith",
@@ -503,6 +518,93 @@ def test_reconcile_unconfirmed_reads_each_lead_through_injected_reader():
     assert [(change.before, change.after) for change in changes] == [
         (LeadState.INVITE_UNCONFIRMED, LeadState.INVITE_APPROVED)
     ]
+
+
+@pytest.mark.parametrize(
+    ("reading", "expected"),
+    [
+        ("message_sent", LeadState.MESSAGED),
+        ("message_absent", LeadState.MESSAGE_APPROVED),
+        (None, LeadState.MESSAGE_UNCONFIRMED),
+    ],
+)
+def test_reconcile_unconfirmed_handles_message_outcomes(reading, expected):
+    lead = Lead(
+        lead_vanity="alice-smith",
+        kind="message",
+        campaign_id="campaign",
+        lead_urn=None,
+        profile_url="https://www.linkedin.com/in/alice-smith/",
+        name="Alice Smith",
+        title=None,
+        company=None,
+        state=LeadState.MESSAGE_UNCONFIRMED,
+        updated_at=NOW,
+    )
+
+    class Store:
+        def __init__(self):
+            self.moves = []
+
+        def unconfirmed_leads(self):
+            return [lead]
+
+        def move_lead(self, current, new_state):
+            self.moves.append((current, new_state))
+
+    store = Store()
+    changes = reconcile_unconfirmed(store, lambda _lead: reading)
+
+    if expected is LeadState.MESSAGE_UNCONFIRMED:
+        assert changes == []
+        assert store.moves == []
+    else:
+        assert store.moves == [(lead, expected)]
+        assert [(change.before, change.after) for change in changes] == [
+            (LeadState.MESSAGE_UNCONFIRMED, expected)
+        ]
+
+
+def test_confirmed_absent_message_releases_reservation_and_requeues(tmp_path):
+    limits, repo, campaign = _campaign(tmp_path)
+    repo.add_leads(
+        campaign.id,
+        [
+            {
+                "lead_vanity": "bob-jones",
+                "profile_url": "https://www.linkedin.com/in/bob-jones/",
+                "name": "Bob Jones",
+                "kind": "message",
+            }
+        ],
+        now=NOW,
+    )
+    with repo._open() as db:
+        db.execute(
+            "UPDATE leads SET state=? WHERE lead_vanity=? AND kind=?",
+            (LeadState.MESSAGE_DRAFTED.value, "bob-jones", "message"),
+        )
+    repo.approve_batch(
+        campaign.id,
+        "message",
+        [{"lead_vanity": "bob-jones", "text": "Hello"}],
+        now=NOW,
+    )
+    pending = repo.next_sendable(campaign.id, "message")
+    assert pending is not None
+    repo.begin_attempt(limits, pending, NOW)
+    assert limits.report()["messages"]["used"] == 1
+
+    changes = reconcile_unconfirmed(
+        RepositoryStore(repo, limits, NOW), lambda _lead: "message_absent"
+    )
+
+    assert [(change.before, change.after) for change in changes] == [
+        (LeadState.MESSAGE_UNCONFIRMED, LeadState.MESSAGE_APPROVED)
+    ]
+    assert repo.get_lead("bob-jones", "message").state is LeadState.MESSAGE_APPROVED
+    assert limits.report()["messages"]["used"] == 0
+    assert repo.next_sendable(campaign.id, "message") is not None
 
 
 async def test_campaign_connect_guard_requires_refusing_incoming_requests():

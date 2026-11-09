@@ -228,7 +228,11 @@ class ProspectingLimits:
         if self.path.exists():
             # No handler around the query. A database that cannot be read must
             # not look like an account that has sent nothing.
-            with closing(sqlite3.connect(self.path, timeout=30)) as db:
+            # A neighboring feature such as the Sales Navigator filter cache
+            # can create this file first with only its own table. Opening it
+            # through _open() upgrades the shared prospecting schema before
+            # _usage() reads writes and leads.
+            with closing(self._open()) as db:
                 for kind in self.limits:
                     daily, weekly = self._usage(db, kind, now)
                     used_today[kind] = daily

@@ -1,0 +1,23 @@
+{
+  "call": {
+    "arguments": {
+      "labels": {},
+      "state_db_path": "/tmp/sales-nav-policy.sqlite3"
+    },
+    "method": "sales_nav_resolve_filters"
+  },
+  "events": [
+    {
+      "call": "sales_nav_resolve_filters",
+      "kind": "evaluate",
+      "operation": "sales_nav_filter_locale",
+      "program_digest": "1110bf8d1efa"
+    }
+  ],
+  "result": {
+    "locale": "en-us",
+    "results": []
+  },
+  "scenario": "sales_nav_resolve_filters__baseline",
+  "schema_version": 1
+}

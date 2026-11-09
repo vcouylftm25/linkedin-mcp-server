@@ -96,6 +96,10 @@
         "coroutine": true,
         "signature": "(self, *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'"
       },
+      "sales_nav_resolve_filters": {
+        "coroutine": true,
+        "signature": "(self, labels: 'dict[str, list[str]]', *, state_db_path: 'str', charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'"
+      },
       "sales_nav_search_accounts": {
         "coroutine": true,
         "signature": "(self, search_url: 'str', *, max_pages: 'int' = 1, charge: 'Callable[[str], object] | None' = None) -> 'dict[str, Any]'"
@@ -157,6 +161,7 @@
       "read_person",
       "reply_to_conversation",
       "sales_nav_list_leads",
+      "sales_nav_resolve_filters",
       "sales_nav_search_accounts",
       "sales_nav_search_leads",
       "sales_nav_search_leads_by_filters",

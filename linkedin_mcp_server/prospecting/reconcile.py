@@ -1,11 +1,12 @@
-"""Move unconfirmed leads from a re-read of the profile. No browser.
+"""Move unconfirmed leads from a re-read. No browser is opened here.
 
-The reader returns a :data:`~linkedin_mcp_server.linkedin.connection.ConnectionState`
-or ``None`` when the profile could not be read. ``connectable`` is the one
-positive confirmation that an invitation was not sent: the invite anchor is
-still on the page. ``pending`` means it is outstanding. ``already_connected``
-means it was accepted. Anything else, including a failed read, leaves the
-lead unconfirmed.
+For invitations, the reader returns a
+:data:`~linkedin_mcp_server.linkedin.connection.ConnectionState` or ``None``
+when the profile could not be read. ``connectable`` confirms the invitation
+was not sent, ``pending`` confirms it is outstanding, and
+``already_connected`` confirms acceptance. For messages, only ``message_sent``
+and ``message_absent`` are decisive conversation evidence. Anything else,
+including a failed or unrelated read, leaves the lead unconfirmed.
 """
 
 from __future__ import annotations
@@ -35,9 +36,20 @@ class UnconfirmedStore(Protocol):
 def reconciled_state(state: LeadState, reading: str | None) -> LeadState:
     """The state *reading* justifies, or *state* when it justifies nothing.
 
-    *reading* is a ``detect_connection_state`` result. ``None`` and
-    ``unavailable`` are not a confirmation that the invitation was withheld.
+    Invitation readings are ``detect_connection_state`` results. For messages,
+    ``message_sent`` confirms delivery and ``message_absent`` confirms a
+    retry is safe. ``None`` and unrelated readings leave either action
+    unconfirmed.
     """
+    if state is LeadState.MESSAGE_UNCONFIRMED:
+        # Message reconciliation needs conversation evidence from its reader;
+        # a profile's connection state says nothing about whether a message
+        # landed. Unknown readings stay out of the send queue.
+        if reading == "message_sent":
+            return LeadState.MESSAGED
+        if reading == "message_absent":
+            return LeadState.MESSAGE_APPROVED
+        return state
     if state is not LeadState.INVITE_UNCONFIRMED:
         return state
     if reading == "pending":

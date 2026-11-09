@@ -66,6 +66,7 @@ TOOL_DELEGATES = {
     "search_people": "search_people",
     "search_posts": "search_posts",
     "sales_nav_status": "sales_nav_status",
+    "sales_nav_resolve_filters": "sales_nav_resolve_filters",
     "sales_nav_search_leads": "sales_nav_search_leads",
     "sales_nav_search_leads_by_filters": "sales_nav_search_leads_by_filters",
     "sales_nav_search_accounts": "sales_nav_search_accounts",
